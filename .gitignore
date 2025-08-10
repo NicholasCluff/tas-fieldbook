@@ -1,0 +1,36 @@
+node_modules
+
+# Output
+.output
+.vercel
+.netlify
+.wrangler
+/.svelte-kit
+/build
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Env
+.env
+.env.*
+!.env.example
+!.env.test
+
+# Vite
+vite.config.js.timestamp-*
+vite.config.ts.timestamp-*
+
+# PWA files
+sw.js
+sw.js.map
+workbox-*.js
+workbox-*.js.map
+
+# Deprecated schema files (use database-schema-final.sql instead)
+supabase-schema.sql
+supabase-schema-fixed.sql
+supabase-schema-corrected.sql
+supabase-rls-fix.sql
+supabase-rls-simple.sql

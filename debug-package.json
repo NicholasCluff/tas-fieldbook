@@ -1,0 +1,12 @@
+{
+  "name": "pdf-debug-processor",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Debug tool for PDF processing logic",
+  "dependencies": {
+    "pdf-lib": "^1.17.1"
+  },
+  "scripts": {
+    "debug": "node debug-pdf-processor.js"
+  }
+}
