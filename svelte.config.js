@@ -9,7 +9,7 @@ const config = {
 	kit: { 
 		adapter: adapter({
 			// Vercel adapter configuration
-			runtime: 'nodejs18.x',
+			runtime: 'nodejs20.x',
 			regions: ['syd1'] // Sydney region for Tasmania proximity
 		})
 	}
