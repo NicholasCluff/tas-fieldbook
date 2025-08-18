@@ -83,18 +83,7 @@ class SurveyPlansService {
         .select(`
           *,
           search_document:search_documents(title, status, file_path),
-          annotations_count:plan_annotations(count),
-          relationships:plan_relationships(
-            id,
-            relationship_type,
-            notes,
-            child_plan:survey_plans!plan_relationships_child_plan_id_fkey(
-              id, reference_number, title
-            ),
-            parent_plan:survey_plans!plan_relationships_parent_plan_id_fkey(
-              id, reference_number, title
-            )
-          )
+          annotations_count:plan_annotations(count)
         `)
         .eq('id', planId)
         .single()
@@ -107,7 +96,7 @@ class SurveyPlansService {
         ...data,
         tags: Array.isArray(data.tags) ? data.tags : [],
         annotations_count: data.annotations_count?.[0]?.count || 0,
-        relationships_count: data.relationships?.length || 0
+        relationships_count: 0 // TODO: Load relationships separately if needed
       }
 
       return { success: true, data: plan }
@@ -471,20 +460,87 @@ class SurveyPlansService {
   }
 
   /**
+   * Fix plan file paths that contain 'undefined'
+   * This is a utility method to fix data corruption from earlier uploads
+   */
+  async fixPlanFilePaths(projectId: string): Promise<ServiceResult<number>> {
+    try {
+      console.log('[SurveyPlans] Starting file path fix for project:', projectId)
+      
+      // Get all plans with undefined file paths
+      const { data: brokenPlans, error: fetchError } = await supabase
+        .from('survey_plans')
+        .select('id, reference_number, file_path, created_at')
+        .eq('project_id', projectId)
+        .like('file_path', '%undefined%')
+
+      if (fetchError) {
+        return { success: false, error: fetchError.message }
+      }
+
+      if (!brokenPlans || brokenPlans.length === 0) {
+        console.log('[SurveyPlans] No broken file paths found')
+        return { success: true, data: 0 }
+      }
+
+      console.log(`[SurveyPlans] Found ${brokenPlans.length} plans with broken file paths`)
+
+      let fixedCount = 0
+      for (const plan of brokenPlans) {
+        // Generate a proper file name
+        const timestamp = new Date(plan.created_at).toISOString().replace(/[:.]/g, '-').split('T')[0]
+        const cleanRef = plan.reference_number.replace(/[^a-zA-Z0-9-]/g, '_')
+        const newFileName = `plan_${cleanRef}_${timestamp}.pdf`
+        const newFilePath = `projects/${projectId}/plans/${newFileName}`
+        
+        console.log(`[SurveyPlans] Fixing plan ${plan.reference_number}: ${plan.file_path} → ${newFilePath}`)
+        
+        // Update the plan's file path
+        const { error: updateError } = await supabase
+          .from('survey_plans')
+          .update({ file_path: newFilePath })
+          .eq('id', plan.id)
+
+        if (updateError) {
+          console.error(`[SurveyPlans] Failed to fix plan ${plan.id}:`, updateError)
+        } else {
+          fixedCount++
+        }
+      }
+
+      console.log(`[SurveyPlans] Fixed ${fixedCount} out of ${brokenPlans.length} plans`)
+      return { success: true, data: fixedCount }
+    } catch (error) {
+      console.error('[SurveyPlans] Error fixing file paths:', error)
+      return { 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Unknown error occurred' 
+      }
+    }
+  }
+
+  /**
    * Get a signed URL for downloading a plan PDF
    */
   async getDownloadUrl(filePath: string): Promise<ServiceResult<string>> {
     try {
+      console.log('[SurveyPlans] Getting download URL for:', filePath)
+      
       const { data, error } = await supabase.storage
         .from('project-files')
         .createSignedUrl(filePath, 3600) // 1 hour expiry
 
+      console.log('[SurveyPlans] Signed URL response:', { data, error })
+
       if (error) {
+        console.error('[SurveyPlans] Signed URL error:', error)
         return { success: false, error: error.message }
       }
 
+      console.log('[SurveyPlans] Generated signed URL:', data.signedUrl)
       return { success: true, data: data.signedUrl }
     } catch (error) {
+      console.error('[SurveyPlans] Unexpected error generating signed URL:', error)
       return { 
         success: false, 
         error: error instanceof Error ? error.message : 'Unknown error occurred' 

@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte'
 	import { page } from '$app/stores'
 	import { goto } from '$app/navigation'
+	import { browser } from '$app/environment'
 	import { authStore } from '$lib/stores/auth.js'
 	import { projectsStore } from '$lib/stores/projects.js'
 	import LoadingSpinner from '$lib/components/common/LoadingSpinner.svelte'
@@ -32,56 +33,30 @@
 		Grid3x3,
 		Maximize2
 	} from 'lucide-svelte'
+	
+	// Import services
+	import { surveyPlansService } from '$lib/services/surveyPlans.service.js'
+	import { planTagsService } from '$lib/services/planTags.service.js'
+	import PdfAnnotationViewer from '$lib/components/pdf/PdfAnnotationViewer.svelte'
+	import type { SurveyPlanWithDetails } from '$lib/types/database.js'
+	import type { PdfAnnotation, AnnotationEvent } from '$lib/types/pdf-annotations.js'
 
 	const projectId = $page.params.id
 	const planId = $page.params.planId
 
-	// Mock plan data
-	let plan = {
-		id: planId,
-		reference_number: '432367-1',
-		title: 'Plan of Survey - Lot 1',
-		description: 'Boundary survey for residential subdivision',
-		file_path: '/storage/plans/432367-1.pdf',
-		status: 'active',
-		tags: ['boundary', 'residential'],
-		created_at: '2024-01-15T11:00:00Z',
-		search_document_id: '1'
-	}
+	// Real plan data
+	let plan: SurveyPlanWithDetails | null = null
+	let loading = true
+	let error = ''
+	let pdfUrl = ''
 
-	// Mock annotations
-	let annotations = [
-		{
-			id: '1',
-			type: 'text',
-			page_number: 1,
-			x: 100,
-			y: 150,
-			content: 'Check boundary monument',
-			style: { color: '#ef4444', fontSize: 14 }
-		},
-		{
-			id: '2',
-			type: 'rectangle',
-			page_number: 1,
-			x: 200,
-			y: 300,
-			width: 150,
-			height: 100,
-			style: { color: '#3b82f6', strokeWidth: 2, fill: 'rgba(59, 130, 246, 0.1)' }
-		}
-	]
+	// PDF Annotations data
+	let annotations: PdfAnnotation[] = []
 
 	// UI State
-	let currentTool = 'move' // 'move' | 'pen' | 'rectangle' | 'circle' | 'text' | 'highlighter'
-	let zoom = 100
-	let rotation = 0
-	let showAnnotations = true
-	let showGrid = false
-	let isFullscreen = false
-	let selectedAnnotation = null
 	let showTagModal = false
 	let showRelationshipModal = false
+	let isFullscreen = false
 
 	// Available tags (mock data)
 	let availableTags = [
@@ -94,36 +69,123 @@
 	]
 
 	$: project = $projectsStore.currentProject
-	$: selectedAnnotationData = selectedAnnotation ? annotations.find(a => a.id === selectedAnnotation) : null
+	
+	// Load plan data on mount
+	onMount(async () => {
+		await loadPlanData()
+	})
+	
+	async function loadPlanData() {
+		if (!planId) return
+		
+		loading = true
+		error = ''
+		
+		try {
+			const result = await surveyPlansService.getPlan(planId)
+			
+			if (result.success) {
+				plan = result.data
+				console.log('Loaded plan data:', plan)
+				
+				// Get PDF URL for viewing
+				if (plan.file_path && !plan.file_path.includes('undefined')) {
+					console.log('Loading PDF for file path:', plan.file_path)
+					const urlResult = await surveyPlansService.getDownloadUrl(plan.file_path)
+					console.log('PDF URL result:', urlResult)
+					if (urlResult.success && urlResult.data) {
+						pdfUrl = urlResult.data
+						console.log('PDF URL set:', pdfUrl)
+					} else {
+						console.error('Failed to get PDF URL:', urlResult.error)
+					}
+				} else {
+					console.warn('Plan has invalid or missing file_path:', plan.file_path)
+					
+					// Try to get PDF from the source document instead
+					if (plan.search_document && plan.search_document.file_path && !plan.search_document.file_path.includes('undefined')) {
+						console.log('Falling back to source document PDF:', plan.search_document.file_path)
+						const urlResult = await surveyPlansService.getDownloadUrl(plan.search_document.file_path)
+						if (urlResult.success && urlResult.data) {
+							pdfUrl = urlResult.data
+							console.log('Using source document PDF:', pdfUrl)
+						}
+					}
+				}
+			} else {
+				error = result.error || 'Failed to load plan'
+			}
+		} catch (err) {
+			error = err instanceof Error ? err.message : 'Unknown error occurred'
+		} finally {
+			loading = false
+		}
+	}
+	
+	async function handleDownload() {
+		if (!plan?.file_path) return
+		
+		try {
+			const result = await surveyPlansService.getDownloadUrl(plan.file_path)
+			if (result.success && result.data) {
+				// Create a temporary link to download the file
+				const link = document.createElement('a')
+				link.href = result.data
+				link.download = plan.file_path.split('/').pop() || 'plan.pdf'
+				document.body.appendChild(link)
+				link.click()
+				document.body.removeChild(link)
+			} else {
+				error = result.error || 'Failed to generate download link'
+			}
+		} catch (err) {
+			error = err instanceof Error ? err.message : 'Download failed'
+		}
+	}
+	
+	async function fixFilePaths() {
+		try {
+			const result = await surveyPlansService.fixPlanFilePaths(projectId)
+			if (result.success) {
+				alert(`Fixed ${result.data} plan file paths. Please refresh the page.`)
+				// Reload the plan data
+				await loadPlanData()
+			} else {
+				alert(`Failed to fix file paths: ${result.error}`)
+			}
+		} catch (err) {
+			alert(`Error: ${err instanceof Error ? err.message : 'Unknown error'}`)
+		}
+	}
 
 	function goBack() {
 		goto(`/projects/${projectId}/search`)
 	}
 
-	function handleZoomIn() {
-		zoom = Math.min(zoom + 25, 400)
-	}
-
-	function handleZoomOut() {
-		zoom = Math.max(zoom - 25, 25)
-	}
-
-	function handleRotate() {
-		rotation = (rotation + 90) % 360
-	}
-
-	function handleToolSelect(tool) {
-		currentTool = tool
-		selectedAnnotation = null
-	}
-
-	function handleSaveAnnotations() {
-		// In real implementation, this would save to the database
-	}
-
 	function toggleFullscreen() {
 		isFullscreen = !isFullscreen
 		// In real implementation, this would use the Fullscreen API
+	}
+
+	// Annotation event handlers
+	function handleAnnotationCreated(event: CustomEvent<AnnotationEvent>) {
+		console.log('Annotation created:', event.detail)
+		// In real implementation, save to Supabase
+	}
+
+	function handleAnnotationUpdated(event: CustomEvent<AnnotationEvent>) {
+		console.log('Annotation updated:', event.detail)
+		// In real implementation, update in Supabase
+	}
+
+	function handleAnnotationDeleted(event: CustomEvent<AnnotationEvent>) {
+		console.log('Annotation deleted:', event.detail)
+		// In real implementation, delete from Supabase
+	}
+
+	function handleAnnotationsLoaded(event: CustomEvent<PdfAnnotation[]>) {
+		console.log('Annotations loaded:', event.detail)
+		annotations = event.detail
 	}
 
 	function handleTagManagement() {
@@ -144,9 +206,32 @@
 </script>
 
 <svelte:head>
-	<title>{plan.title} - Search Analysis - TasFieldbook</title>
+	<title>{plan?.title || 'Plan'} - Search Analysis - TasFieldbook</title>
 </svelte:head>
 
+{#if loading}
+	<div class="h-screen flex items-center justify-center">
+		<LoadingSpinner />
+		<span class="ml-3 text-gray-600">Loading plan...</span>
+	</div>
+{:else if error}
+	<div class="h-screen flex items-center justify-center">
+		<ErrorMessage message={error} />
+	</div>
+{:else if !plan}
+	<div class="h-screen flex items-center justify-center">
+		<div class="text-center">
+			<h2 class="text-xl font-semibold text-gray-900 mb-2">Plan not found</h2>
+			<p class="text-gray-600 mb-4">The requested plan could not be found.</p>
+			<button 
+				on:click={goBack}
+				class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+			>
+				Back to Search
+			</button>
+		</div>
+	</div>
+{:else}
 <div class="h-screen flex flex-col {isFullscreen ? 'fixed inset-0 z-50 bg-white' : ''}">
 	<!-- Header -->
 	<div class="bg-white border-b border-gray-200 px-6 py-4 flex-shrink-0">
@@ -159,19 +244,25 @@
 					<ArrowLeft size={20} />
 				</button>
 				<div>
-					<h1 class="text-xl font-bold text-gray-900">{plan.title}</h1>
+					<h1 class="text-xl font-bold text-gray-900">{plan.title || plan.reference_number}</h1>
 					<div class="flex items-center space-x-4 text-sm text-gray-500">
 						<span>{plan.reference_number}</span>
 						<span>•</span>
 						<span>{formatDate(plan.created_at)}</span>
-						<span>•</span>
-						<div class="flex space-x-1">
-							{#each plan.tags as tag}
-								<span class="inline-block bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded">
-									{tag}
-								</span>
-							{/each}
-						</div>
+						{#if plan.page_numbers && plan.page_numbers.length > 0}
+							<span>•</span>
+							<span>{plan.page_numbers.length} pages</span>
+						{/if}
+						{#if plan.tags && plan.tags.length > 0}
+							<span>•</span>
+							<div class="flex space-x-1">
+								{#each plan.tags as tag}
+									<span class="inline-block text-xs px-2 py-1 rounded" style="background-color: {tag.color}20; color: {tag.color};">
+										{tag.name}
+									</span>
+								{/each}
+							</div>
+						{/if}
 					</div>
 				</div>
 			</div>
@@ -198,6 +289,7 @@
 					<Share2 size={18} />
 				</button>
 				<button 
+					on:click={handleDownload}
 					class="p-2 text-gray-400 hover:text-gray-600 rounded-md hover:bg-gray-100"
 					title="Download plan"
 				>
@@ -214,259 +306,67 @@
 		</div>
 	</div>
 
-	<div class="flex flex-1 overflow-hidden">
-		<!-- Toolbar -->
-		<div class="bg-white border-r border-gray-200 w-16 flex flex-col items-center py-4 space-y-2 flex-shrink-0">
-			<!-- Navigation Tools -->
-			<button 
-				on:click={() => handleToolSelect('move')}
-				class="p-3 rounded-lg {currentTool === 'move' ? 'bg-blue-100 text-blue-600' : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'}"
-				title="Move/Pan"
-			>
-				<Move size={20} />
-			</button>
-
-			<div class="w-8 h-px bg-gray-200 my-2"></div>
-
-			<!-- Annotation Tools -->
-			<button 
-				on:click={() => handleToolSelect('pen')}
-				class="p-3 rounded-lg {currentTool === 'pen' ? 'bg-blue-100 text-blue-600' : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'}"
-				title="Freehand drawing"
-			>
-				<Pen size={20} />
-			</button>
-			
-			<button 
-				on:click={() => handleToolSelect('rectangle')}
-				class="p-3 rounded-lg {currentTool === 'rectangle' ? 'bg-blue-100 text-blue-600' : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'}"
-				title="Rectangle"
-			>
-				<Square size={20} />
-			</button>
-			
-			<button 
-				on:click={() => handleToolSelect('circle')}
-				class="p-3 rounded-lg {currentTool === 'circle' ? 'bg-blue-100 text-blue-600' : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'}"
-				title="Circle"
-			>
-				<Circle size={20} />
-			</button>
-			
-			<button 
-				on:click={() => handleToolSelect('text')}
-				class="p-3 rounded-lg {currentTool === 'text' ? 'bg-blue-100 text-blue-600' : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'}"
-				title="Text annotation"
-			>
-				<Type size={20} />
-			</button>
-			
-			<button 
-				on:click={() => handleToolSelect('highlighter')}
-				class="p-3 rounded-lg {currentTool === 'highlighter' ? 'bg-blue-100 text-blue-600' : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'}"
-				title="Highlighter"
-			>
-				<Highlighter size={20} />
-			</button>
-
-			<div class="w-8 h-px bg-gray-200 my-2"></div>
-
-			<!-- Action Tools -->
-			<button 
-				class="p-3 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100"
-				title="Undo"
-			>
-				<Undo size={20} />
-			</button>
-			
-			<button 
-				class="p-3 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100"
-				title="Redo"
-			>
-				<Redo size={20} />
-			</button>
-			
-			<button 
-				on:click={handleSaveAnnotations}
-				class="p-3 rounded-lg text-blue-600 hover:text-blue-700 hover:bg-blue-50"
-				title="Save annotations"
-			>
-				<Save size={20} />
-			</button>
-		</div>
-
-		<!-- Main Content Area -->
-		<div class="flex-1 flex flex-col overflow-hidden">
-			<!-- Viewer Controls -->
-			<div class="bg-gray-50 border-b border-gray-200 px-4 py-2 flex items-center justify-between flex-shrink-0">
-				<div class="flex items-center space-x-4">
-					<div class="flex items-center space-x-2">
-						<button 
-							on:click={handleZoomOut}
-							class="p-1 text-gray-400 hover:text-gray-600"
-						>
-							<ZoomOut size={16} />
-						</button>
-						<span class="text-sm text-gray-600 min-w-[60px] text-center">{zoom}%</span>
-						<button 
-							on:click={handleZoomIn}
-							class="p-1 text-gray-400 hover:text-gray-600"
-						>
-							<ZoomIn size={16} />
-						</button>
-					</div>
-					
-					<button 
-						on:click={handleRotate}
-						class="p-1 text-gray-400 hover:text-gray-600"
-						title="Rotate"
-					>
-						<RotateCw size={16} />
-					</button>
-					
-					<button 
-						on:click={() => showAnnotations = !showAnnotations}
-						class="flex items-center space-x-1 px-2 py-1 text-sm {showAnnotations ? 'text-blue-600' : 'text-gray-600'}"
-						title="Toggle annotations"
-					>
-						<svelte:component this={showAnnotations ? Eye : EyeOff} size={16} />
-						<span>Annotations</span>
-					</button>
-					
-					<button 
-						on:click={() => showGrid = !showGrid}
-						class="flex items-center space-x-1 px-2 py-1 text-sm {showGrid ? 'text-blue-600' : 'text-gray-600'}"
-						title="Toggle grid"
-					>
-						<Grid3x3 size={16} />
-						<span>Grid</span>
-					</button>
-				</div>
-				
-				<div class="text-sm text-gray-500">
-					Page 1 of 1
-				</div>
-			</div>
-
-			<!-- PDF Viewer Area -->
-			<div class="flex-1 bg-gray-100 relative overflow-hidden">
-				<div class="absolute inset-0 flex items-center justify-center">
-					<!-- PDF Viewer Container -->
-					<div 
-						class="bg-white shadow-lg relative"
-						style="transform: scale({zoom/100}) rotate({rotation}deg); transform-origin: center center;"
-					>
-						<!-- Mock PDF Page -->
-						<div class="w-[595px] h-[842px] bg-white border border-gray-300 relative">
-							<!-- Mock PDF Content -->
-							<div class="p-8">
-								<h2 class="text-lg font-bold mb-4">PLAN OF SURVEY</h2>
-								<div class="text-sm space-y-2">
-									<p><strong>Lot:</strong> 1</p>
-									<p><strong>Parish:</strong> Hobart</p>
-									<p><strong>Reference:</strong> {plan.reference_number}</p>
-									<p><strong>Scale:</strong> 1:500</p>
-								</div>
-								
-								<!-- Mock plan drawing area -->
-								<div class="mt-8 border border-gray-400" style="width: 400px; height: 300px;">
-									<svg width="400" height="300" class="border">
-										<!-- Mock boundary lines -->
-										<rect x="50" y="50" width="300" height="200" fill="none" stroke="#000" stroke-width="2"/>
-										<rect x="100" y="100" width="200" height="100" fill="none" stroke="#666" stroke-width="1"/>
-										
-										<!-- Mock measurements -->
-										<text x="200" y="40" text-anchor="middle" font-size="10">50.00m</text>
-										<text x="30" y="150" text-anchor="middle" font-size="10" transform="rotate(-90, 30, 150)">30.00m</text>
-									</svg>
-								</div>
-							</div>
-							
-							<!-- Annotations Overlay -->
-							{#if showAnnotations}
-								<div class="absolute inset-0 pointer-events-none">
-									{#each annotations as annotation}
-										{#if annotation.type === 'text'}
-											<div 
-												class="absolute pointer-events-auto cursor-pointer"
-												style="left: {annotation.x}px; top: {annotation.y}px; color: {annotation.style.color}; font-size: {annotation.style.fontSize}px;"
-												on:click={() => selectedAnnotation = annotation.id}
-											>
-												{annotation.content}
-											</div>
-										{:else if annotation.type === 'rectangle'}
-											<div 
-												class="absolute border-2 pointer-events-auto cursor-pointer"
-												style="left: {annotation.x}px; top: {annotation.y}px; width: {annotation.width}px; height: {annotation.height}px; border-color: {annotation.style.color}; background-color: {annotation.style.fill};"
-												on:click={() => selectedAnnotation = annotation.id}
-											></div>
-										{/if}
-									{/each}
-								</div>
-							{/if}
-							
-							<!-- Grid Overlay -->
-							{#if showGrid}
-								<div class="absolute inset-0 pointer-events-none">
-									<svg width="100%" height="100%" class="opacity-20">
-										{#each Array(20) as _, i}
-											<line x1="{i * 30}" y1="0" x2="{i * 30}" y2="100%" stroke="#666" stroke-width="0.5"/>
-											<line x1="0" y1="{i * 40}" x2="100%" y2="{i * 40}" stroke="#666" stroke-width="0.5"/>
-										{/each}
-									</svg>
-								</div>
-							{/if}
+	<!-- PDF Annotation Viewer -->
+	<div class="flex-1 overflow-hidden">
+		{#if pdfUrl}
+			<PdfAnnotationViewer
+				src={pdfUrl}
+				projectId={projectId}
+				width={isFullscreen && browser ? window.innerWidth : 1200}
+				height={isFullscreen && browser ? window.innerHeight - 80 : 800}
+				{annotations}
+				readonly={false}
+				config={{
+					enableThumbnails: true,
+					enableLayers: true,
+					enableMeasurements: true,
+					enableComments: true,
+					enableExport: true,
+					enableCoordinateLinking: true,
+					enableMapIntegration: true,
+					defaultMeasurementUnit: 'm'
+				}}
+				on:annotation-created={handleAnnotationCreated}
+				on:annotation-updated={handleAnnotationUpdated}
+				on:annotation-deleted={handleAnnotationDeleted}
+				on:annotations-loaded={handleAnnotationsLoaded}
+				on:viewer-ready={() => console.log('PDF viewer ready')}
+				on:error={(e) => error = e.detail.message}
+			/>
+		{:else}
+			<!-- Loading or No PDF Available -->
+			<div class="flex-1 flex items-center justify-center bg-gray-100">
+				<div class="bg-white shadow-lg w-[595px] h-[842px] flex items-center justify-center border border-gray-300 rounded-lg">
+					{#if loading}
+						<div class="text-center">
+							<div class="text-gray-500 mb-2">Loading PDF...</div>
+							<div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
 						</div>
-					</div>
-				</div>
-			</div>
-		</div>
-
-		<!-- Properties Panel -->
-		{#if selectedAnnotation}
-			<div class="bg-white border-l border-gray-200 w-80 flex-shrink-0 p-4">
-				<h3 class="text-lg font-semibold text-gray-900 mb-4">Annotation Properties</h3>
-				
-				<div class="space-y-4">
-					<div>
-						<label class="block text-sm font-medium text-gray-700 mb-2">Type</label>
-						<input type="text" value={selectedAnnotationData?.type || ''} readonly 
-							   class="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50" />
-					</div>
-					
-					{#if selectedAnnotationData?.type === 'text'}
-						<div>
-							<label class="block text-sm font-medium text-gray-700 mb-2">Content</label>
-							<textarea 
-								class="w-full px-3 py-2 border border-gray-300 rounded-md"
-								rows="3"
-								bind:value={selectedAnnotationData.content}
-							></textarea>
+					{:else}
+						<div class="text-center text-gray-500">
+							<div class="text-lg mb-4">📄</div>
+							<div class="font-medium text-gray-900 mb-2">PDF not available</div>
+							<div class="text-sm mb-4">This plan's PDF file could not be loaded</div>
+							{#if plan}
+								<div class="space-y-2 text-left bg-gray-50 p-4 rounded-lg max-w-md">
+									<div class="text-sm"><strong>Plan:</strong> {plan.reference_number}</div>
+									{#if plan.title}<div class="text-sm"><strong>Title:</strong> {plan.title}</div>{/if}
+									{#if plan.page_numbers && plan.page_numbers.length > 0}
+										<div class="text-sm"><strong>Pages:</strong> {plan.page_numbers.join(', ')}</div>
+									{/if}
+									<div class="text-sm"><strong>Created:</strong> {formatDate(plan.created_at)}</div>
+									{#if plan.file_path && plan.file_path.includes('undefined')}
+										<button 
+											on:click={fixFilePaths}
+											class="mt-3 px-3 py-2 bg-yellow-600 text-white text-sm rounded-md hover:bg-yellow-700"
+										>
+											Fix File Paths
+										</button>
+									{/if}
+								</div>
+							{/if}
 						</div>
 					{/if}
-					
-					<div>
-						<label class="block text-sm font-medium text-gray-700 mb-2">Color</label>
-						<input 
-							type="color" 
-							class="w-full h-10 border border-gray-300 rounded-md"
-							bind:value={selectedAnnotationData.style.color}
-						/>
-					</div>
-					
-					<div class="flex space-x-2">
-						<button 
-							on:click={handleSaveAnnotations}
-							class="flex-1 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
-						>
-							Save
-						</button>
-						<button 
-							class="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
-						>
-							Delete
-						</button>
-					</div>
 				</div>
 			</div>
 		{/if}
@@ -482,12 +382,16 @@
 					<div>
 						<label class="block text-sm font-medium text-gray-700 mb-2">Current Tags</label>
 						<div class="flex flex-wrap gap-2">
-							{#each plan.tags as tag}
-								<span class="inline-flex items-center bg-blue-100 text-blue-800 text-sm px-3 py-1 rounded-full">
-									{tag}
-									<button class="ml-2 text-blue-600 hover:text-blue-800">×</button>
-								</span>
-							{/each}
+							{#if plan.tags && plan.tags.length > 0}
+								{#each plan.tags as tag}
+									<span class="inline-flex items-center text-sm px-3 py-1 rounded-full" style="background-color: {tag.color}20; color: {tag.color};">
+										{tag.name}
+										<button class="ml-2 hover:opacity-70">×</button>
+									</span>
+								{/each}
+							{:else}
+								<p class="text-sm text-gray-500">No tags assigned</p>
+							{/if}
 						</div>
 					</div>
 					
@@ -575,3 +479,4 @@
 		</div>
 	{/if}
 </div>
+{/if}

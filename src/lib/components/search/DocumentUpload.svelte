@@ -3,7 +3,9 @@
 	import { Upload, X, FileText, AlertCircle, CheckCircle } from 'lucide-svelte'
 	import { searchDocumentsService } from '$lib/services/searchDocuments.service.js'
 	import { pdfProcessingService } from '$lib/services/pdfProcessing.service.js'
+	import DocumentAnalysisModal from './DocumentAnalysisModal.svelte'
 	import type { SearchDocument } from '$lib/types/database.js'
+	import type { ExtractedPlan, PDFMetadata } from '$lib/types/pdf.js'
 	
 	export let projectId: string
 	export let multiple = false
@@ -26,6 +28,16 @@
 	let processingStatus = ''
 	let debugMode = false
 	let debugLogs: string[] = []
+	let currentStage: 'analyzing' | 'extracting' | 'splitting' | 'uploading' | 'complete' = 'analyzing'
+	let detectedPlans: any[] = []
+	let currentPlan = ''
+	
+	// Modal state
+	let showAnalysisModal = false
+	let currentFile: File | null = null
+	let currentMetadata: PDFMetadata | null = null
+	let currentExtractedPlans: ExtractedPlan[] = []
+	let analysisProgress: { stage: string, progress: number, message: string } | null = null
 	
 	function addDebugLog(message: string) {
 		debugLogs = [...debugLogs, `${new Date().toISOString()}: ${message}`]
@@ -174,105 +186,176 @@
 		dispatch('cancel')
 	}
 	
-	async function handleUpload() {
+	// Start analysis - opens the modal for the first file
+	async function startAnalysis() {
 		if (files.length === 0) {
-			console.log(`⚠️ [DocumentUpload] Upload attempted with no files`)
+			console.log(`⚠️ [DocumentUpload] Analysis attempted with no files`)
 			return
 		}
 		
-		console.log(`🚀 [DocumentUpload] Starting upload process for ${files.length} files`)
-		addDebugLog(`Starting upload for ${files.length} files`)
-		console.log(`📋 [DocumentUpload] Upload configuration:`, {
-			projectId,
-			documentTitle,
-			autoProcess,
-			multiple,
-			files: files.map(f => ({ name: f.name, size: f.size }))
-		})
+		// For now, handle single file (can be extended for multiple files)
+		currentFile = files[0]
+		showAnalysisModal = true
+		analysisProgress = { stage: 'analyzing', progress: 0, message: 'Starting analysis...' }
+		
+		console.log(`🔍 [DocumentUpload] Starting analysis for: ${currentFile.name}`)
+		addDebugLog(`Starting analysis for: ${currentFile.name}`)
+		
+		try {
+			// Progress callback for analysis
+			const progressCallback = (progress: any) => {
+				analysisProgress = {
+					stage: progress.stage,
+					progress: progress.progress,
+					message: progress.message
+				}
+				
+				// Update detected plans for modal
+				if (progress.stage === 'extracting' && progress.plans) {
+					currentExtractedPlans = progress.plans.map((p: any) => ({
+						referenceNumber: p.referenceNumber,
+						title: p.referenceNumber,
+						startPage: 1, // Will be filled in by the processing
+						endPage: p.pageCount || 1,
+						pageCount: p.pageCount || 1
+					}))
+				}
+				
+				addDebugLog(`Analysis: ${progress.stage} - ${progress.message}`)
+			}
+			
+			// Run client-side analysis without upload
+			const analysisResult = await pdfProcessingService.processDocumentClientSide(
+				currentFile,
+				progressCallback
+			)
+			
+			if (!analysisResult.success) {
+				console.error(`❌ [DocumentUpload] Analysis failed:`, analysisResult.error)
+				addDebugLog(`❌ Analysis failed: ${analysisResult.error}`)
+				analysisProgress = { stage: 'complete', progress: 100, message: 'Analysis failed' }
+				return
+			}
+			
+			const { plans, metadata } = analysisResult.data!
+			currentMetadata = metadata
+			currentExtractedPlans = plans
+			analysisProgress = { stage: 'complete', progress: 100, message: 'Analysis complete' }
+			
+			console.log(`✅ [DocumentUpload] Analysis complete:`, { plans: plans.length, metadata })
+			addDebugLog(`✅ Analysis complete: ${plans.length} plans detected`)
+			
+		} catch (error) {
+			console.error(`❌ [DocumentUpload] Analysis failed:`, error)
+			addDebugLog(`❌ Analysis failed: ${error instanceof Error ? error.message : 'Unknown error'}`)
+			analysisProgress = { stage: 'complete', progress: 100, message: 'Analysis failed' }
+		}
+	}
+	
+	// Handle final upload from modal
+	async function handleFinalUpload(plans: ExtractedPlan[]) {
+		if (!currentFile || !currentMetadata) {
+			console.error(`❌ [DocumentUpload] No file or metadata available for upload`)
+			return
+		}
+		
+		console.log(`🚀 [DocumentUpload] Starting final upload with ${plans.length} plans`)
+		addDebugLog(`Starting final upload with ${plans.length} plans`)
 		
 		uploading = true
 		uploadProgress = 0
+		showAnalysisModal = false
 		
 		try {
-			const uploadedDocuments: SearchDocument[] = []
+			const title = documentTitle || currentFile.name.replace('.pdf', '')
 			
-			// Upload files one by one
-			for (let i = 0; i < files.length; i++) {
-				const file = files[i]
-				const title = multiple ? file.name.replace('.pdf', '') : (documentTitle || file.name.replace('.pdf', ''))
-				
-				console.log(`📤 [DocumentUpload] Uploading file ${i + 1}/${files.length}: ${file.name}`)
-				addDebugLog(`Uploading ${file.name} (${i + 1}/${files.length})`)
-				console.log(`📤 [DocumentUpload] Upload parameters:`, { projectId, title, fileName: file.name, fileSize: file.size })
-				
-				processingStatus = `Uploading ${file.name}...`
-				uploadProgress = Math.round((i / files.length) * 70) // Reserve 30% for processing
-				
-				// Upload to Supabase Storage with timeout
-				console.log(`🔄 [DocumentUpload] Calling searchDocumentsService.uploadDocument...`)
-				const uploadResult = await Promise.race([
-					searchDocumentsService.uploadDocument(projectId, file, title),
-					new Promise<never>((_, reject) => 
-						setTimeout(() => reject(new Error(`Upload timeout after ${timeout/1000}s`)), timeout)
-					)
-				])
-				console.log(`📤 [DocumentUpload] Upload result for ${file.name}:`, uploadResult)
-				
-				if (!uploadResult.success) {
-					console.error(`❌ [DocumentUpload] Upload failed for ${file.name}:`, uploadResult.error)
-					addDebugLog(`❌ Upload failed: ${uploadResult.error}`)
-					throw new Error(`Failed to upload ${file.name}: ${uploadResult.error}`)
-				}
-				
-				console.log(`✅ [DocumentUpload] Upload successful for ${file.name}:`, uploadResult.data)
-				addDebugLog(`✅ Upload successful for ${file.name}`)
-				uploadedDocuments.push(uploadResult.data!)
-				
-				// If auto-process is enabled, trigger processing
-				if (autoProcess) {
-					console.log(`⚙️ [DocumentUpload] Starting auto-processing for ${file.name}`)
-					processingStatus = `Processing ${file.name}...`
-					uploadProgress = Math.round(((i + 0.5) / files.length) * 100)
-					
-					const processResult = await Promise.race([
-						searchDocumentsService.processDocument(uploadResult.data!.id),
-						new Promise<never>((_, reject) => 
-							setTimeout(() => reject(new Error(`Processing timeout after ${timeout/1000}s`)), timeout)
-						)
-					])
-					console.log(`⚙️ [DocumentUpload] Processing result for ${file.name}:`, processResult)
-					
-					if (!processResult.success) {
-						// Don't fail the entire upload if processing fails
-						console.warn(`⚠️ [DocumentUpload] Processing failed for ${file.name}:`, processResult.error)
-						dispatch('error', { message: `Upload successful, but processing failed for ${file.name}: ${processResult.error}` })
-					} else {
-						console.log(`✅ [DocumentUpload] Processing successful for ${file.name}:`, processResult.data)
-					}
-				}
+			// Progress callback for upload
+			const progressCallback = (progress: any) => {
+				currentStage = progress.stage
+				uploadProgress = progress.progress
+				processingStatus = progress.message
+				currentPlan = progress.currentPlan || ''
+				addDebugLog(`Upload: ${progress.stage} - ${progress.message}`)
+			}
+			
+			// Split and upload using the edited plans
+			const splitResult = await pdfProcessingService.splitAndUploadPlans(
+				currentFile,
+				plans,
+				projectId,
+				progressCallback
+			)
+			
+			if (!splitResult.success) {
+				console.error(`❌ [DocumentUpload] Upload failed:`, splitResult.error)
+				addDebugLog(`❌ Upload failed: ${splitResult.error}`)
+				throw new Error(`Upload failed: ${splitResult.error}`)
+			}
+			
+			// Create document record in database
+			console.log(`💾 [DocumentUpload] Creating document record`)
+			const documentRecord = await searchDocumentsService.createDocumentRecord(
+				projectId,
+				title,
+				currentFile.name,
+				plans,
+				splitResult.data!,
+				currentMetadata
+			)
+			
+			if (!documentRecord.success) {
+				console.error(`❌ [DocumentUpload] Failed to create document record:`, documentRecord.error)
+				addDebugLog(`❌ Database record failed: ${documentRecord.error}`)
+				throw new Error(`Failed to save document record: ${documentRecord.error}`)
 			}
 			
 			uploadProgress = 100
+			currentStage = 'complete'
 			processingStatus = 'Upload complete!'
-			console.log(`🎉 [DocumentUpload] All uploads complete. Total documents:`, uploadedDocuments.length)
+			console.log(`✅ [DocumentUpload] Upload successful`)
+			addDebugLog(`✅ Upload complete`)
 			
 			// Wait a bit to show completion
-			await new Promise(resolve => setTimeout(resolve, 500))
+			await new Promise(resolve => setTimeout(resolve, 1000))
 			
-			console.log(`🎉 [DocumentUpload] Dispatching upload-complete event`)
-			dispatch('upload-complete', { documents: uploadedDocuments })
+			dispatch('upload-complete', { documents: [documentRecord.data!] })
 			close()
 			
 		} catch (error) {
-			console.error(`❌ [DocumentUpload] Upload process failed:`, error)
-			addDebugLog(`❌ Upload process failed: ${error instanceof Error ? error.message : 'Unknown error'}`)
+			console.error(`❌ [DocumentUpload] Upload failed:`, error)
+			addDebugLog(`❌ Upload failed: ${error instanceof Error ? error.message : 'Unknown error'}`)
 			dispatch('error', { 
 				message: error instanceof Error ? error.message : 'Upload failed. Please try again.' 
 			})
 			uploading = false
 			uploadProgress = 0
 			processingStatus = ''
+			currentStage = 'analyzing'
 		}
+	}
+
+	// Modal event handlers
+	function handleModalProceed(event: { plans: ExtractedPlan[] }) {
+		handleFinalUpload(event.plans)
+	}
+
+	function handleModalCancel() {
+		showAnalysisModal = false
+		currentFile = null
+		currentMetadata = null
+		currentExtractedPlans = []
+		analysisProgress = null
+	}
+
+	function handleModalRetry() {
+		// Reset and restart analysis
+		currentExtractedPlans = []
+		analysisProgress = null
+		startAnalysis()
+	}
+
+	function handlePlansChange(plans: ExtractedPlan[]) {
+		currentExtractedPlans = plans
 	}
 </script>
 
@@ -399,23 +482,80 @@
 				</div>
 			{/if}
 			
-			<!-- Upload Progress -->
+			<!-- Processing Progress -->
 			{#if uploading || processingStatus}
 				<div class="mb-6">
 					<div class="flex items-center justify-between mb-2">
-						<span class="text-sm font-medium text-gray-700">
-							{processingStatus || 'Processing...'}
-						</span>
+						<div class="flex items-center space-x-2">
+							<span class="text-sm font-medium text-gray-700">
+								{processingStatus || 'Processing...'}
+							</span>
+							{#if currentPlan}
+								<span class="text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded">
+									{currentPlan}
+								</span>
+							{/if}
+						</div>
 						{#if uploading}
 							<span class="text-sm text-gray-500">{uploadProgress}%</span>
 						{/if}
 					</div>
+					
+					<!-- Progress Bar -->
 					{#if uploading}
-						<div class="w-full bg-gray-200 rounded-full h-2">
+						<div class="w-full bg-gray-200 rounded-full h-2 mb-3">
 							<div 
-								class="bg-blue-600 h-2 rounded-full transition-all duration-300"
+								class="h-2 rounded-full transition-all duration-300 {
+									currentStage === 'complete' ? 'bg-green-600' : 
+									currentStage === 'uploading' ? 'bg-blue-600' :
+									currentStage === 'splitting' ? 'bg-orange-600' :
+									currentStage === 'extracting' ? 'bg-purple-600' : 'bg-blue-400'
+								}"
 								style="width: {uploadProgress}%"
 							></div>
+						</div>
+						
+						<!-- Stage Indicators -->
+						<div class="flex justify-between text-xs text-gray-500 mb-3">
+							<div class="flex items-center space-x-1">
+								<div class="w-2 h-2 rounded-full {currentStage === 'analyzing' || uploadProgress > 0 ? 'bg-blue-500' : 'bg-gray-300'}"></div>
+								<span>Analyzing</span>
+							</div>
+							<div class="flex items-center space-x-1">
+								<div class="w-2 h-2 rounded-full {currentStage === 'extracting' || uploadProgress > 30 ? 'bg-purple-500' : 'bg-gray-300'}"></div>
+								<span>Extracting</span>
+							</div>
+							<div class="flex items-center space-x-1">
+								<div class="w-2 h-2 rounded-full {currentStage === 'splitting' || uploadProgress > 60 ? 'bg-orange-500' : 'bg-gray-300'}"></div>
+								<span>Splitting</span>
+							</div>
+							<div class="flex items-center space-x-1">
+								<div class="w-2 h-2 rounded-full {currentStage === 'uploading' || uploadProgress > 80 ? 'bg-blue-500' : 'bg-gray-300'}"></div>
+								<span>Uploading</span>
+							</div>
+							<div class="flex items-center space-x-1">
+								<div class="w-2 h-2 rounded-full {currentStage === 'complete' ? 'bg-green-500' : 'bg-gray-300'}"></div>
+								<span>Complete</span>
+							</div>
+						</div>
+					{/if}
+					
+					<!-- Detected Plans Preview -->
+					{#if detectedPlans.length > 0}
+						<div class="bg-green-50 border border-green-200 rounded-lg p-3">
+							<div class="flex items-center mb-2">
+								<CheckCircle size={16} class="text-green-500 mr-2" />
+								<span class="text-sm font-medium text-green-700">
+									{detectedPlans.length} Plans Detected
+								</span>
+							</div>
+							<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 text-xs">
+								{#each detectedPlans as plan}
+									<div class="bg-white px-2 py-1 rounded border text-green-700">
+										{plan.referenceNumber} ({plan.pageCount} pages)
+									</div>
+								{/each}
+							</div>
 						</div>
 					{/if}
 				</div>
@@ -464,12 +604,25 @@
 						Cancel
 					</button>
 					<button 
-						on:click={handleUpload}
+						on:click={startAnalysis}
 						class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
 						disabled={files.length === 0 || uploading || !documentTitle.trim()}
 					>
-						{uploading ? 'Uploading...' : `Upload ${files.length} File${files.length > 1 ? 's' : ''}`}
+						{uploading ? 'Uploading...' : 'Analyze Document'}
 					</button>
 				</div>
 			</div>
 		</div>
+
+<!-- Analysis Modal -->
+<DocumentAnalysisModal 
+	open={showAnalysisModal}
+	fileName={currentFile?.name || ''}
+	metadata={currentMetadata || { pageCount: 0, fileSize: 0 }}
+	detectedPlans={currentExtractedPlans}
+	analysisProgress={analysisProgress}
+	onproceed={handleModalProceed}
+	oncancel={handleModalCancel}
+	onretry={handleModalRetry}
+	onplanschange={handlePlansChange}
+/>

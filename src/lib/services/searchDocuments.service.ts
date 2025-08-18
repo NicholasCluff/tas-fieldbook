@@ -232,59 +232,31 @@ class SearchDocumentsService {
   }
 
   /**
-   * Process a document (split into individual plans)
-   * This calls a Supabase Edge Function to handle PDF processing
+   * Process a document (DEPRECATED - now done client-side)
+   * This method is kept for backward compatibility but should not be used
+   * Use client-side processing in DocumentUpload component instead
    */
   async processDocument(documentId: string): Promise<ServiceResult<DocumentProcessingResult>> {
-    console.log(`⚙️ [SearchDocuments] processDocument called for:`, documentId)
-    
-    try {
-      console.log(`🔄 [SearchDocuments] Invoking process-search-document edge function...`)
-      const { data, error } = await supabase.functions.invoke('process-search-document', {
-        body: { documentId }
-      })
-
-      console.log(`⚙️ [SearchDocuments] Edge function result:`, { data, error })
-
-      if (error) {
-        console.error(`❌ [SearchDocuments] Edge function error:`, error)
-        return { success: false, error: error.message }
-      }
-
-      console.log(`✅ [SearchDocuments] Processing successful:`, data)
-      return { success: true, data }
-    } catch (error) {
-      console.error(`❌ [SearchDocuments] Unexpected processing error:`, error)
-      return { 
-        success: false, 
-        error: error instanceof Error ? error.message : 'Unknown error occurred' 
-      }
+    console.warn(`⚠️ [SearchDocuments] processDocument is deprecated. Use client-side processing instead.`)
+    return { 
+      success: false, 
+      error: 'Document processing is now handled client-side. This method is deprecated.' 
     }
   }
 
   /**
-   * Get processing status for a document
+   * Get processing status for a document (DEPRECATED - now done client-side)
+   * This method is kept for backward compatibility but should not be used
    */
   async getProcessingStatus(documentId: string): Promise<ServiceResult<{ 
     status: 'pending' | 'processing' | 'completed' | 'failed'
     progress?: number
     error?: string 
   }>> {
-    try {
-      const { data, error } = await supabase.functions.invoke('get-processing-status', {
-        body: { documentId }
-      })
-
-      if (error) {
-        return { success: false, error: error.message }
-      }
-
-      return { success: true, data }
-    } catch (error) {
-      return { 
-        success: false, 
-        error: error instanceof Error ? error.message : 'Unknown error occurred' 
-      }
+    console.warn(`⚠️ [SearchDocuments] getProcessingStatus is deprecated. Processing is now done client-side.`)
+    return { 
+      success: false, 
+      error: 'Processing status is now handled client-side. This method is deprecated.' 
     }
   }
 
@@ -370,6 +342,106 @@ class SearchDocumentsService {
       return { 
         success: false, 
         error: error instanceof Error ? error.message : 'Unknown error occurred' 
+      }
+    }
+  }
+
+  /**
+   * Create document record after client-side processing
+   * This replaces the old upload + edge function approach
+   */
+  async createDocumentRecord(
+    projectId: string,
+    title: string,
+    originalFileName: string,
+    plans: any[],
+    uploadedFiles: string[],
+    metadata: any
+  ): Promise<ServiceResult<SearchDocument>> {
+    try {
+      console.log(`💾 [SearchDocuments] Creating document record:`, {
+        projectId,
+        title,
+        originalFileName,
+        plansCount: plans.length,
+        filesCount: uploadedFiles.length
+      })
+
+      // Get current user
+      const { data: { user } } = await supabase.auth.getUser()
+      
+      if (!user) {
+        return { success: false, error: 'User not authenticated' }
+      }
+
+      // Create the search document record
+      const documentData = {
+        project_id: projectId,
+        title,
+        file_path: uploadedFiles[0] || '', // Use first uploaded file as primary
+        file_size: metadata.fileSize || 0,
+        mime_type: 'application/pdf',
+        uploaded_by: user.id,
+        status: 'not_required' // Since we're processing client-side, no review needed
+      }
+
+      console.log(`💾 [SearchDocuments] Inserting document record:`, documentData)
+
+      const { data: document, error: docError } = await supabase
+        .from('search_documents')
+        .insert(documentData)
+        .select()
+        .single()
+
+      if (docError) {
+        console.error(`❌ [SearchDocuments] Failed to create document record:`, docError)
+        return { success: false, error: `Failed to create document record: ${docError.message}` }
+      }
+
+      // Create survey plan records for each extracted plan
+      if (plans.length > 0) {
+        console.log(`📋 [SearchDocuments] Creating ${plans.length} plan records...`)
+        
+        const planInserts = plans.map((plan, index) => {
+          // Create page range array
+          const pageNumbers = []
+          for (let i = plan.startPage; i <= plan.endPage; i++) {
+            pageNumbers.push(i)
+          }
+          
+          return {
+            project_id: projectId,
+            search_document_id: document.id,
+            reference_number: plan.referenceNumber,
+            title: plan.title || plan.referenceNumber,
+            file_path: uploadedFiles[index] || uploadedFiles[0], // Use corresponding file or fallback to first
+            page_numbers: pageNumbers,
+            file_size: metadata.fileSize || 0,
+            created_by: user.id
+          }
+        })
+
+        const { error: plansError } = await supabase
+          .from('survey_plans')
+          .insert(planInserts)
+
+        if (plansError) {
+          console.error(`❌ [SearchDocuments] Failed to create plan records:`, plansError)
+          // Don't fail the entire operation, just log the error
+          console.warn(`⚠️ [SearchDocuments] Document created but plan records failed: ${plansError.message}`)
+        } else {
+          console.log(`✅ [SearchDocuments] Successfully created ${plans.length} plan records`)
+        }
+      }
+
+      console.log(`✅ [SearchDocuments] Document record created successfully:`, document)
+      return { success: true, data: document }
+
+    } catch (error) {
+      console.error(`❌ [SearchDocuments] Error creating document record:`, error)
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to create document record'
       }
     }
   }

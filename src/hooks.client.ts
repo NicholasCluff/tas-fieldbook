@@ -25,9 +25,9 @@ if (isBrowser()) {
     console.log('[ClientHooks] Auth state change:', event, { hasSession: !!session });
     
     if (event === 'SIGNED_IN' || event === 'SIGNED_OUT' || event === 'TOKEN_REFRESHED') {
-      console.log('[ClientHooks] Invalidating all server data');
+      // console.log('[ClientHooks] Invalidating all server data');
       // Invalidate all server data to trigger re-fetch with new auth state
-      invalidateAll()
+      // invalidateAll()
     }
   })
 }

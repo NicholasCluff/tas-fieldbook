@@ -37,32 +37,38 @@ function createAuthStore() {
       console.log('[AuthStore] Initializing auth state change listener');
 
       // Listen for auth changes
-      supabase.auth.onAuthStateChange(async (event, session) => {
-        console.log('[AuthStore] Auth state change event:', event, { hasSession: !!session });
-        
-        if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
-          console.log('[AuthStore] User signed in or token refreshed');
-          // Get validated user data
-          const { data: { user }, error } = await supabase.auth.getUser()
-          if (user && !error) {
-            console.log('[AuthStore] User data retrieved successfully');
-            update(state => ({ ...state, user, session, loading: false }))
-            // Load profile
-            console.log('[AuthStore] Loading user profile');
-            loadProfile(user.id)
+      // Fix for auth failing after tab change: make callback non-blocking
+      // See: https://github.com/nuxt-modules/supabase/issues/273#issuecomment-2051932773
+      supabase.auth.onAuthStateChange((event, session) => {
+        setTimeout(() => {
+          console.log('[AuthStore] Auth state change event:', event, { hasSession: !!session });
+          
+          if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+            console.log('[AuthStore] User signed in or token refreshed');
+            // Get validated user data
+            supabase.auth.getUser().then(({ data: { user }, error }) => {
+              if (user && !error) {
+                console.log('[AuthStore] User data retrieved successfully');
+                update(state => ({ ...state, user, session, loading: false }))
+                // Load profile
+                console.log('[AuthStore] Loading user profile');
+                loadProfile(user.id)
+              } else {
+                console.log('[AuthStore] Error getting user data:', error);
+              }
+            })
+          } else if (event === 'SIGNED_OUT') {
+            console.log('[AuthStore] User signed out');
+            set(initialState)
           } else {
-            console.log('[AuthStore] Error getting user data:', error);
+            console.log('[AuthStore] Other auth event:', event);
+            set(initialState);
           }
-        } else if (event === 'SIGNED_OUT') {
-          console.log('[AuthStore] User signed out');
-          set(initialState)
-        } else {
-          console.log('[AuthStore] Other auth event:', event);
-        }
-        
-        // Invalidate all server data to refetch with new auth state
-        console.log('[AuthStore] Invalidating all server data');
-        invalidateAll()
+          
+          // // Invalidate all server data to refetch with new auth state
+          // console.log('[AuthStore] Invalidating all server data');
+          // invalidateAll()
+        }, 0);
       })
     }
   }

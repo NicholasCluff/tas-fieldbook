@@ -49,6 +49,10 @@
 		dispatch('planSelect', { planId })
 	}
 	
+	function handlePlanView(planId: string) {
+		dispatch('planView', { planId })
+	}
+	
 	function handleActionClick(event: Event, planId: string) {
 		event.stopPropagation()
 		showActionsMenu = showActionsMenu === planId ? null : planId
@@ -101,7 +105,8 @@
 						<div class="relative">
 							<button 
 								class="w-full bg-gray-100 h-48 flex items-center justify-center hover:bg-gray-200 transition-colors"
-								on:click={() => handlePlanClick(plan.id)}
+								on:click={() => handlePlanView(plan.id)}
+								title="View plan with annotation tools"
 							>
 								<FileText size={32} class="text-gray-400" />
 							</button>
@@ -151,10 +156,10 @@
 										<div class="absolute right-0 top-8 bg-white border border-gray-200 rounded-lg shadow-lg z-10 min-w-[150px]">
 											<button 
 												class="w-full px-4 py-2 text-left text-sm hover:bg-gray-50 flex items-center space-x-2"
-												on:click={() => handleAction('view', plan)}
+												on:click={() => handlePlanView(plan.id)}
 											>
 												<Eye size={16} />
-												<span>View</span>
+												<span>View & Annotate</span>
 											</button>
 											<button 
 												class="w-full px-4 py-2 text-left text-sm hover:bg-gray-50 flex items-center space-x-2"
@@ -249,7 +254,7 @@
 							<FileText size={20} class="text-blue-500" />
 						</div>
 						
-						<div class="flex-1 min-w-0 cursor-pointer" on:click={() => handlePlanClick(plan.id)}>
+						<div class="flex-1 min-w-0 cursor-pointer" on:click={() => handlePlanView(plan.id)}>
 							<div class="flex items-center justify-between">
 								<div class="flex-1 min-w-0">
 									<h3 class="text-sm font-medium text-gray-900 truncate">{plan.title}</h3>
@@ -300,10 +305,10 @@
 											<div class="absolute right-0 top-8 bg-white border border-gray-200 rounded-lg shadow-lg z-10 min-w-[150px]">
 												<button 
 													class="w-full px-4 py-2 text-left text-sm hover:bg-gray-50 flex items-center space-x-2"
-													on:click={() => handleAction('view', plan)}
+													on:click={() => handlePlanView(plan.id)}
 												>
 													<Eye size={16} />
-													<span>View</span>
+													<span>View & Annotate</span>
 												</button>
 												<button 
 													class="w-full px-4 py-2 text-left text-sm hover:bg-gray-50 flex items-center space-x-2"
