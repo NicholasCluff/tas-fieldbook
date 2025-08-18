@@ -45,33 +45,33 @@ async function loadPdfJs() {
  */
 async function analyzeBookmarks(pdfBuffer) {
   try {
-    console.log('\n=== LOADING PDF FOR BOOKMARK ANALYSIS ===');
+    // console.log('\n=== LOADING PDF FOR BOOKMARK ANALYSIS ===');
     
     const pdfjs = await loadPdfJs();
     const loadingTask = pdfjs.getDocument({ data: pdfBuffer });
     const pdf = await loadingTask.promise;
     
-    console.log(`PDF loaded successfully - ${pdf.numPages} pages`);
+    // console.log(`PDF loaded successfully - ${pdf.numPages} pages`);
     
     // Get the outline/bookmarks
-    console.log('\n=== EXTRACTING BOOKMARKS/OUTLINE ===');
+    // console.log('\n=== EXTRACTING BOOKMARKS/OUTLINE ===');
     const outline = await pdf.getOutline();
     
     if (!outline || outline.length === 0) {
-      console.log('❌ No bookmarks/outline found in PDF');
+      // console.log('❌ No bookmarks/outline found in PDF');
       return null;
     }
     
-    console.log(`✅ Found ${outline.length} top-level bookmark entries`);
+    // console.log(`✅ Found ${outline.length} top-level bookmark entries`);
     
     // Parse the bookmark structure
     const bookmarks = await parseOutlineItems(pdf, outline, 0);
     
-    console.log('\n=== BOOKMARK STRUCTURE ===');
+    // console.log('\n=== BOOKMARK STRUCTURE ===');
     printBookmarkStructure(bookmarks);
     
     // Analyze bookmarks for survey plan patterns
-    console.log('\n=== SURVEY PLAN ANALYSIS ===');
+    // console.log('\n=== SURVEY PLAN ANALYSIS ===');
     const plans = analyzeBookmarksForPlans(bookmarks, pdf.numPages);
     
     return { bookmarks, plans, totalPages: pdf.numPages };
@@ -138,7 +138,7 @@ async function parseOutlineItems(pdf, items, level) {
 function printBookmarkStructure(bookmarks, indent = '') {
   for (const bookmark of bookmarks) {
     const pageInfo = bookmark.page ? `(Page ${bookmark.page})` : '(No page)';
-    console.log(`${indent}📖 "${bookmark.title}" ${pageInfo}`);
+    // console.log(`${indent}📖 "${bookmark.title}" ${pageInfo}`);
     
     if (bookmark.children && bookmark.children.length > 0) {
       printBookmarkStructure(bookmark.children, indent + '  ');
@@ -150,12 +150,12 @@ function printBookmarkStructure(bookmarks, indent = '') {
  * Analyze bookmarks to identify survey plan boundaries
  */
 function analyzeBookmarksForPlans(bookmarks, totalPages) {
-  console.log('Analyzing bookmarks for survey plan patterns...');
+  // console.log('Analyzing bookmarks for survey plan patterns...');
   
   // Flatten bookmarks to get all entries with pages
   const flatBookmarks = flattenBookmarks(bookmarks).filter(b => b.page !== null);
   
-  console.log(`Found ${flatBookmarks.length} bookmarks with valid page references`);
+  // console.log(`Found ${flatBookmarks.length} bookmarks with valid page references`);
   
   // Survey plan patterns to look for in bookmark titles
   const planPatterns = [
@@ -171,10 +171,10 @@ function analyzeBookmarksForPlans(bookmarks, totalPages) {
   
   const detectedPlans = [];
   
-  console.log('\n--- Analyzing each bookmark ---');
+  // console.log('\n--- Analyzing each bookmark ---');
   for (let i = 0; i < flatBookmarks.length; i++) {
     const bookmark = flatBookmarks[i];
-    console.log(`\nBookmark ${i + 1}: "${bookmark.title}" -> Page ${bookmark.page}`);
+    // console.log(`\nBookmark ${i + 1}: "${bookmark.title}" -> Page ${bookmark.page}`);
     
     let planReference = null;
     let matchedPattern = null;
@@ -185,20 +185,20 @@ function analyzeBookmarksForPlans(bookmarks, totalPages) {
       if (match) {
         planReference = match[1] || match[0];
         matchedPattern = pattern.name;
-        console.log(`  ✅ Matched ${pattern.name}: "${planReference}"`);
+        // console.log(`  ✅ Matched ${pattern.name}: "${planReference}"`);
         break;
       }
     }
     
     if (!planReference) {
-      console.log(`  ❌ No survey plan pattern matched`);
+      // console.log(`  ❌ No survey plan pattern matched`);
       // Check if this looks like a plan boundary anyway
       if (bookmark.title.toLowerCase().includes('plan') || 
           bookmark.title.toLowerCase().includes('survey') ||
           bookmark.title.toLowerCase().includes('lot')) {
         planReference = `PLAN_${String(detectedPlans.length + 1).padStart(3, '0')}`;
         matchedPattern = 'Generic boundary';
-        console.log(`  🔍 Treating as generic plan boundary: "${planReference}"`);
+        // console.log(`  🔍 Treating as generic plan boundary: "${planReference}"`);
       }
     }
     
@@ -219,14 +219,14 @@ function analyzeBookmarksForPlans(bookmarks, totalPages) {
         originalBookmarkTitle: bookmark.title
       };
       
-      console.log(`  📋 Plan detected: Pages ${bookmark.page}-${endPage} (${pageCount} pages)`);
+      // console.log(`  📋 Plan detected: Pages ${bookmark.page}-${endPage} (${pageCount} pages)`);
       detectedPlans.push(plan);
     }
   }
   
-  console.log(`\n=== PLAN DETECTION SUMMARY ===`);
-  console.log(`Total bookmarks analyzed: ${flatBookmarks.length}`);
-  console.log(`Survey plans detected: ${detectedPlans.length}`);
+  // console.log(`\n=== PLAN DETECTION SUMMARY ===`);
+  // console.log(`Total bookmarks analyzed: ${flatBookmarks.length}`);
+  // console.log(`Survey plans detected: ${detectedPlans.length}`);
   
   if (detectedPlans.length === 0) {
     console.log(`⚠️  No survey plans detected from bookmarks`);

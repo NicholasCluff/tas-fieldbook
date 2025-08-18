@@ -30,38 +30,38 @@ function createAuthStore() {
     update,
     init: () => {
       if (!browser) {
-        console.log('[AuthStore] Not in browser, skipping init');
+        // console.log('[AuthStore] Not in browser, skipping init');
         return
       }
 
-      console.log('[AuthStore] Initializing auth state change listener');
+      // console.log('[AuthStore] Initializing auth state change listener');
 
       // Listen for auth changes
       // Fix for auth failing after tab change: make callback non-blocking
       // See: https://github.com/nuxt-modules/supabase/issues/273#issuecomment-2051932773
       supabase.auth.onAuthStateChange((event, session) => {
         setTimeout(() => {
-          console.log('[AuthStore] Auth state change event:', event, { hasSession: !!session });
+          // console.log('[AuthStore] Auth state change event:', event, { hasSession: !!session });
           
           if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
-            console.log('[AuthStore] User signed in or token refreshed');
+            // console.log('[AuthStore] User signed in or token refreshed');
             // Get validated user data
             supabase.auth.getUser().then(({ data: { user }, error }) => {
               if (user && !error) {
-                console.log('[AuthStore] User data retrieved successfully');
+                // console.log('[AuthStore] User data retrieved successfully');
                 update(state => ({ ...state, user, session, loading: false }))
                 // Load profile
-                console.log('[AuthStore] Loading user profile');
+                // console.log('[AuthStore] Loading user profile');
                 loadProfile(user.id)
               } else {
-                console.log('[AuthStore] Error getting user data:', error);
+                // console.log('[AuthStore] Error getting user data:', error);
               }
             })
           } else if (event === 'SIGNED_OUT') {
-            console.log('[AuthStore] User signed out');
+            // console.log('[AuthStore] User signed out');
             set(initialState)
           } else {
-            console.log('[AuthStore] Other auth event:', event);
+            // console.log('[AuthStore] Other auth event:', event);
             set(initialState);
           }
           
@@ -77,7 +77,7 @@ function createAuthStore() {
 export const authStore = createAuthStore()
 
 async function loadProfile(userId: string) {
-  console.log('[AuthStore] Loading profile for user:', userId);
+  // console.log('[AuthStore] Loading profile for user:', userId);
   try {
     const { data: profile, error } = await supabase
       .from('profiles')
@@ -86,15 +86,15 @@ async function loadProfile(userId: string) {
       .single()
 
     if (error) {
-      console.log('[AuthStore] Profile load error:', error.message);
+      // console.log('[AuthStore] Profile load error:', error.message);
       authStore.update(state => ({ ...state, error: error.message }))
       return
     }
 
-    console.log('[AuthStore] Profile loaded successfully:', profile ? 'has profile' : 'no profile');
+    // console.log('[AuthStore] Profile loaded successfully:', profile ? 'has profile' : 'no profile');
     authStore.update(state => ({ ...state, profile }))
   } catch (err) {
-    console.log('[AuthStore] Profile load exception:', err);
+    // console.log('[AuthStore] Profile load exception:', err);
     authStore.update(state => ({ ...state, error: 'Failed to load profile' }))
   }
 }

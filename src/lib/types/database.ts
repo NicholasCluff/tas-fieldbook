@@ -338,6 +338,8 @@ export interface Database {
           file_size: number | null
           status: 'active' | 'archived' | 'deleted'
           sort_order: number
+          plan_year: number | null
+          is_starred: boolean
           created_by: string | null
           created_at: string
           updated_at: string
@@ -354,6 +356,8 @@ export interface Database {
           file_size?: number | null
           status?: 'active' | 'archived' | 'deleted'
           sort_order?: number
+          plan_year?: number | null
+          is_starred?: boolean
           created_by?: string | null
           created_at?: string
           updated_at?: string
@@ -370,6 +374,8 @@ export interface Database {
           file_size?: number | null
           status?: 'active' | 'archived' | 'deleted'
           sort_order?: number
+          plan_year?: number | null
+          is_starred?: boolean
           created_by?: string | null
           created_at?: string
           updated_at?: string
@@ -506,6 +512,8 @@ export interface Database {
           file_size: number | null
           status: 'active' | 'archived' | 'deleted'
           sort_order: number
+          plan_year: number | null
+          is_starred: boolean
           created_by: string | null
           created_at: string
           updated_at: string
@@ -589,8 +597,9 @@ export interface PlanFilters {
   search?: string
   tags?: string[]
   status?: SurveyPlan['status'][]
-  sort_by?: 'created_at' | 'updated_at' | 'title' | 'reference_number'
+  sort_by?: 'created_at' | 'updated_at' | 'title' | 'reference_number' | 'plan_year' | 'is_starred'
   sort_order?: 'asc' | 'desc'
+  starred_only?: boolean
 }
 
 export interface DocumentProcessingResult {

@@ -198,7 +198,8 @@ class PlanRelationshipsService {
   }
 
   /**
-   * Get relationship hierarchy for a plan (recursive tree structure)
+   * Get relationship hierarchy for a plan (using basic relationships)
+   * This builds a simplified hierarchy from the direct relationships
    */
   async getPlanHierarchy(planId: string, maxDepth: number = 5): Promise<ServiceResult<{
     plan: {
@@ -210,17 +211,71 @@ class PlanRelationshipsService {
     children: any[]
   }>> {
     try {
-      const { data, error } = await supabase
-        .rpc('get_plan_hierarchy', { 
-          plan_uuid: planId, 
-          max_depth: maxDepth 
-        })
-
-      if (error) {
-        return { success: false, error: error.message }
+      // Get the basic relationships for this plan
+      const relationshipsResult = await this.getPlanRelationships(planId)
+      
+      if (!relationshipsResult.success) {
+        return { success: false, error: relationshipsResult.error }
       }
 
-      return { success: true, data: data || { plan: null, parents: [], children: [] } }
+      const relationships = relationshipsResult.data
+      if (!relationships) {
+        return { success: false, error: 'No relationship data found' }
+      }
+
+      // Get plan details from the first relationship or use planId
+      let currentPlan = null
+      if (relationships.as_parent.length > 0) {
+        // Use parent relationship to get current plan details
+        const parentRel = relationships.as_parent[0]
+        currentPlan = {
+          id: planId,
+          reference_number: 'Current Plan', // Would need to fetch actual plan details
+          title: null
+        }
+      } else if (relationships.as_child.length > 0) {
+        // Use child relationship to get current plan details  
+        const childRel = relationships.as_child[0]
+        currentPlan = {
+          id: planId,
+          reference_number: 'Current Plan', // Would need to fetch actual plan details
+          title: null
+        }
+      } else {
+        currentPlan = {
+          id: planId,
+          reference_number: 'Current Plan',
+          title: null
+        }
+      }
+
+      // Convert relationships to hierarchy format
+      const parents = relationships.as_child.map(rel => ({
+        plan: {
+          id: rel.parent_plan.id,
+          reference_number: rel.parent_plan.reference_number,
+          title: rel.parent_plan.title
+        },
+        relationship_type: rel.relationship_type
+      }))
+
+      const children = relationships.as_parent.map(rel => ({
+        plan: {
+          id: rel.child_plan.id,
+          reference_number: rel.child_plan.reference_number,
+          title: rel.child_plan.title
+        },
+        relationship_type: rel.relationship_type
+      }))
+
+      return { 
+        success: true, 
+        data: { 
+          plan: currentPlan,
+          parents,
+          children 
+        } 
+      }
     } catch (error) {
       return { 
         success: false, 

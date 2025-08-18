@@ -16,7 +16,7 @@ async function getPdfjs() {
     // Use local worker file in static directory
     pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdfjs/pdf.worker.min.js'
     
-    console.log(`📚 [PDFProcessing] PDF.js worker configured:`, pdfjsLib.GlobalWorkerOptions.workerSrc)
+    // console.log(`📚 [PDFProcessing] PDF.js worker configured:`, pdfjsLib.GlobalWorkerOptions.workerSrc)
   }
   
   return pdfjsLib
@@ -75,13 +75,13 @@ class PDFProcessingService {
    */
   async extractMetadata(file: File): Promise<ServiceResult<PDFMetadata>> {
     try {
-      console.log(`📄 [PDFProcessing] Starting metadata extraction for: ${file.name}`)
+      // console.log(`📄 [PDFProcessing] Starting metadata extraction for: ${file.name}`)
       
       const arrayBuffer = await file.arrayBuffer()
-      console.log(`📄 [PDFProcessing] File loaded to array buffer: ${arrayBuffer.byteLength} bytes`)
+      // console.log(`📄 [PDFProcessing] File loaded to array buffer: ${arrayBuffer.byteLength} bytes`)
       
       const pdfDoc = await PDFDocument.load(arrayBuffer)
-      console.log(`📄 [PDFProcessing] PDF document loaded with pdf-lib, pages: ${pdfDoc.getPageCount()}`)
+      // console.log(`📄 [PDFProcessing] PDF document loaded with pdf-lib, pages: ${pdfDoc.getPageCount()}`)
       
       const metadata: PDFMetadata = {
         title: pdfDoc.getTitle(),
@@ -95,7 +95,7 @@ class PDFProcessingService {
         fileSize: file.size
       }
 
-      console.log(`📄 [PDFProcessing] Metadata extracted successfully:`, metadata)
+      // console.log(`📄 [PDFProcessing] Metadata extracted successfully:`, metadata)
       return { success: true, data: metadata }
     } catch (error) {
       return { 

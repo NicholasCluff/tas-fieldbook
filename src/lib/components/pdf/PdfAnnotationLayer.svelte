@@ -1,6 +1,8 @@
 <script lang="ts">
   import { onMount, onDestroy, createEventDispatcher } from 'svelte'
   import { browser } from '$app/environment'
+  import { pdfAnnotationsService } from '$lib/services/pdfAnnotations.service.js'
+  import { getCurrentUser } from '$lib/utils/supabase.js'
   import type { 
     PdfAnnotation, 
     DrawingState, 
@@ -19,22 +21,27 @@
     canvasHeight: number
     pdfScale: number
     currentPage: number
+    planId?: string
+    projectId?: string
   }
 
   let {
     annotations,
-    drawingState,
+    drawingState = $bindable(),
     viewerConfig,
     canvasWidth,
     canvasHeight,
     pdfScale,
-    currentPage
+    currentPage,
+    planId,
+    projectId
   }: Props = $props()
 
   const dispatch = createEventDispatcher<{
     'annotation-created': AnnotationEvent
     'annotation-updated': AnnotationEvent
     'annotation-deleted': AnnotationEvent
+    'zoom-at-point': { factor: number; center: { x: number; y: number }; point: CanvasPoint }
   }>()
 
   let layerRef: HTMLDivElement | undefined
@@ -48,6 +55,10 @@
   // Mouse/touch state
   let lastPointerEvent: PointerEvent | null = null
   let pointerCache: PointerEvent[] = []
+  
+  // Pan state (not used with dragscroll)
+  // let isPanning = $state(false)
+  // let lastPanPoint: CanvasPoint | null = $state(null)
 
   onMount(() => {
     if (browser) {
@@ -74,9 +85,11 @@
     drawingCanvas.style.height = `${canvasHeight}px`
     overlayCanvas.style.width = `${canvasWidth}px`
     overlayCanvas.style.height = `${canvasHeight}px`
+    
+    
 
     // Configure drawing context
-    const ctx = drawingCanvas.getContext('2d')
+    const ctx = drawingCanvas.getContext('2d', { willReadFrequently: true })
     if (ctx) {
       ctx.lineCap = 'round'
       ctx.lineJoin = 'round'
@@ -84,7 +97,7 @@
     }
 
     // Configure overlay context
-    const overlayCtx = overlayCanvas.getContext('2d')
+    const overlayCtx = overlayCanvas.getContext('2d', { willReadFrequently: true })
     if (overlayCtx) {
       overlayCtx.lineCap = 'round'
       overlayCtx.lineJoin = 'round'
@@ -126,19 +139,6 @@
     const x = (event.clientX - rect.left) * (canvasWidth / rect.width)
     const y = (event.clientY - rect.top) * (canvasHeight / rect.height)
     
-    console.log('[PdfAnnotationLayer] getPointFromEvent:', {
-      clientX: event.clientX,
-      clientY: event.clientY,
-      rectLeft: rect.left,
-      rectTop: rect.top,
-      rectWidth: rect.width,
-      rectHeight: rect.height,
-      canvasWidth,
-      canvasHeight,
-      pdfScale,
-      resultX: x,
-      resultY: y
-    })
     
     return {
       x,
@@ -148,7 +148,25 @@
   }
 
   function handlePointerDown(event: PointerEvent) {
-    if (viewerConfig.readonly || drawingState.activeTool === 'select' || drawingState.activeTool === 'pan') {
+    if (viewerConfig.readonly) {
+      return
+    }
+
+    // Middle-click is handled by browser (e.g., for scrolling)
+    if (event.button === 1) { // Middle mouse button
+      // Let browser handle middle-click (auto-scroll, etc.)
+      return
+    }
+
+    // Handle different tools
+    if (drawingState.activeTool === 'select') {
+      handleSelectPointerDown(event)
+      return
+    } else if (drawingState.activeTool === 'pan') {
+      // Pan is handled by dragscroll action on the parent container
+      return
+    } else if (drawingState.activeTool === 'zoom') {
+      handleZoomPointerDown(event)
       return
     }
 
@@ -189,8 +207,9 @@
       },
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
-      user_id: 'current-user', // TODO: Get from auth store
-      project_id: '' // TODO: Get from props
+      user_id: '', // Will be set when saving
+      project_id: projectId || '',
+      plan_id: planId
     }
 
     // Capture pointer for smooth drawing
@@ -357,7 +376,7 @@
         break
         
       case 'circle':
-        const radius = Math.sqrt(width * width + height * height) / 2
+        const radius = Math.min(Math.abs(width), Math.abs(height)) / 2
         const centerX = startPoint.x + width / 2
         const centerY = startPoint.y + height / 2
         ctx.beginPath()
@@ -382,22 +401,45 @@
     }
 
     // Update annotation coordinates
-    currentAnnotation.coordinates = {
-      canvasCoords: {
-        x: Math.min(startPoint.x, point.x),
-        y: Math.min(startPoint.y, point.y),
-        width: Math.abs(width),
-        height: Math.abs(height)
-      },
-      pdfCoords: {
-        x: Math.min(startPoint.x, point.x) / pdfScale,
-        y: (canvasHeight - Math.max(startPoint.y, point.y)) / pdfScale,
-        width: Math.abs(width) / pdfScale,
-        height: Math.abs(height) / pdfScale
-      },
-      pageWidth: canvasWidth,
-      pageHeight: canvasHeight,
-      scale: pdfScale
+    if (drawingState.activeTool === 'line' || drawingState.activeTool === 'arrow') {
+      // For lines and arrows, store actual start and end points to preserve direction
+      currentAnnotation.coordinates = {
+        canvasCoords: {
+          x: startPoint.x,
+          y: startPoint.y,
+          path: [startPoint, point]
+        },
+        pdfCoords: {
+          x: startPoint.x / pdfScale,
+          y: (canvasHeight - startPoint.y) / pdfScale,
+          path: [
+            { x: startPoint.x / pdfScale, y: (canvasHeight - startPoint.y) / pdfScale, pressure: startPoint.pressure },
+            { x: point.x / pdfScale, y: (canvasHeight - point.y) / pdfScale, pressure: point.pressure }
+          ]
+        },
+        pageWidth: canvasWidth,
+        pageHeight: canvasHeight,
+        scale: pdfScale
+      }
+    } else {
+      // For other shapes (rectangles, circles), use bounding box
+      currentAnnotation.coordinates = {
+        canvasCoords: {
+          x: Math.min(startPoint.x, point.x),
+          y: Math.min(startPoint.y, point.y),
+          width: Math.abs(width),
+          height: Math.abs(height)
+        },
+        pdfCoords: {
+          x: Math.min(startPoint.x, point.x) / pdfScale,
+          y: (canvasHeight - Math.max(startPoint.y, point.y)) / pdfScale,
+          width: Math.abs(width) / pdfScale,
+          height: Math.abs(height) / pdfScale
+        },
+        pageWidth: canvasWidth,
+        pageHeight: canvasHeight,
+        scale: pdfScale
+      }
     }
   }
 
@@ -512,7 +554,7 @@
     
     const coords = {
       x: pdfCoords.x * currentScale,
-      y: canvasHeight - (pdfCoords.y * currentScale),
+      y: canvasHeight - (pdfCoords.y * currentScale) - (pdfCoords.height ? pdfCoords.height * currentScale : 0),
       width: pdfCoords.width ? pdfCoords.width * currentScale : undefined,
       height: pdfCoords.height ? pdfCoords.height * currentScale : undefined,
       path: pdfCoords.path ? pdfCoords.path.map(p => ({
@@ -556,10 +598,33 @@
         break
 
       case 'line':
-        ctx.beginPath()
-        ctx.moveTo(coords.x, coords.y)
-        ctx.lineTo(coords.x + (coords.width || 0), coords.y + (coords.height || 0))
-        ctx.stroke()
+        if (coords.path && coords.path.length >= 2) {
+          // Use stored path for directional lines
+          ctx.beginPath()
+          ctx.moveTo(coords.path[0].x, coords.path[0].y)
+          ctx.lineTo(coords.path[1].x, coords.path[1].y)
+          ctx.stroke()
+        } else {
+          // Fallback for old annotations without path data
+          ctx.beginPath()
+          ctx.moveTo(coords.x, coords.y)
+          ctx.lineTo(coords.x + (coords.width || 0), coords.y + (coords.height || 0))
+          ctx.stroke()
+        }
+        break
+
+      case 'arrow':
+        if (coords.path && coords.path.length >= 2) {
+          // Use stored path for directional arrows
+          const startPoint = { x: coords.path[0].x, y: coords.path[0].y, pressure: coords.path[0].pressure || 0.5 }
+          const endPoint = { x: coords.path[1].x, y: coords.path[1].y, pressure: coords.path[1].pressure || 0.5 }
+          drawArrow(ctx, startPoint, endPoint)
+        } else {
+          // Fallback for old annotations without path data
+          const startPoint = { x: coords.x, y: coords.y, pressure: 0.5 }
+          const endPoint = { x: coords.x + (coords.width || 0), y: coords.y + (coords.height || 0), pressure: 0.5 }
+          drawArrow(ctx, startPoint, endPoint)
+        }
         break
 
       case 'text':
@@ -589,18 +654,235 @@
     ctx?.clearRect(0, 0, canvasWidth, canvasHeight)
   }
 
-  function dispatchAnnotationCreated(annotation: PdfAnnotation) {
-    dispatch('annotation-created', {
+  // Select tool handlers
+  function handleSelectPointerDown(event: PointerEvent) {
+    event.preventDefault()
+    event.stopPropagation()
+    
+    const point = getPointFromEvent(event)
+    
+    // Check if clicking on an existing annotation
+    const clickedAnnotation = findAnnotationAtPoint(point)
+    
+    if (clickedAnnotation) {
+      // Handle annotation selection
+      if (event.ctrlKey || event.metaKey) {
+        // Multi-select with Ctrl/Cmd
+        if (drawingState.selectedAnnotations.includes(clickedAnnotation.id)) {
+          drawingState.selectedAnnotations = drawingState.selectedAnnotations.filter(id => id !== clickedAnnotation.id)
+        } else {
+          drawingState.selectedAnnotations = [...drawingState.selectedAnnotations, clickedAnnotation.id]
+        }
+      } else {
+        // Single select
+        drawingState.selectedAnnotations = [clickedAnnotation.id]
+      }
+    } else {
+      // Click on empty space - clear selection
+      drawingState.selectedAnnotations = []
+    }
+  }
+
+  // Pan tool handlers - now handled by dragscroll action
+  // These functions are no longer needed as dragscroll handles pan functionality
+
+  // Zoom tool handlers
+  function handleZoomPointerDown(event: PointerEvent) {
+    event.preventDefault()
+    event.stopPropagation()
+    
+    const point = getPointFromEvent(event)
+    
+    // Zoom in on left click, zoom out on right click or with modifier key
+    const zoomOut = event.button === 2 || event.shiftKey
+    const zoomFactor = zoomOut ? 0.8 : 1.25
+    
+    // Calculate zoom center point
+    const zoomCenter = {
+      x: point.x / canvasWidth,
+      y: point.y / canvasHeight
+    }
+    
+    // Dispatch zoom event to parent
+    dispatch('zoom-at-point', { 
+      factor: zoomFactor, 
+      center: zoomCenter,
+      point 
+    })
+  }
+
+  // Helper function to find annotation at a point
+  function findAnnotationAtPoint(point: CanvasPoint): PdfAnnotation | null {
+    // Check annotations in reverse order (top to bottom)
+    for (let i = annotations.length - 1; i >= 0; i--) {
+      const annotation = annotations[i]
+      if (annotation.pageNumber !== currentPage) continue
+      
+      // Convert PDF coordinates to current scale (same as drawing logic)
+      const pdfCoords = annotation.coordinates.pdfCoords
+      const currentScale = pdfScale
+      
+      const scaledCoords = {
+        x: pdfCoords.x * currentScale,
+        y: canvasHeight - (pdfCoords.y * currentScale) - (pdfCoords.height ? pdfCoords.height * currentScale : 0),
+        width: pdfCoords.width ? pdfCoords.width * currentScale : 0,
+        height: pdfCoords.height ? pdfCoords.height * currentScale : 0,
+        path: pdfCoords.path ? pdfCoords.path.map(p => ({
+          x: p.x * currentScale,
+          y: canvasHeight - (p.y * currentScale),
+          pressure: p.pressure
+        })) : undefined
+      }
+      
+      if (annotation.type === 'freehand') {
+        // For freehand, check if point is near the path
+        if (scaledCoords.path && isPointNearPath(point, scaledCoords.path)) {
+          return annotation
+        }
+      } else {
+        // For shapes, check if point is inside bounding box
+        const x = scaledCoords.x
+        const y = scaledCoords.y
+        const width = scaledCoords.width
+        const height = scaledCoords.height
+        
+        if (point.x >= x && point.x <= x + width &&
+            point.y >= y && point.y <= y + height) {
+          return annotation
+        }
+      }
+    }
+    return null
+  }
+
+  // Helper function to check if point is near a path (for freehand annotations)
+  function isPointNearPath(point: CanvasPoint, path: CanvasPoint[], threshold = 10): boolean {
+    for (let i = 0; i < path.length - 1; i++) {
+      const p1 = path[i]
+      const p2 = path[i + 1]
+      
+      // Calculate distance from point to line segment
+      const distance = distanceToLineSegment(point, p1, p2)
+      if (distance <= threshold) {
+        return true
+      }
+    }
+    return false
+  }
+
+  // Helper function to calculate distance from point to line segment
+  function distanceToLineSegment(point: CanvasPoint, p1: CanvasPoint, p2: CanvasPoint): number {
+    const A = point.x - p1.x
+    const B = point.y - p1.y
+    const C = p2.x - p1.x
+    const D = p2.y - p1.y
+
+    const dot = A * C + B * D
+    const lenSq = C * C + D * D
+    let param = -1
+    
+    if (lenSq !== 0) {
+      param = dot / lenSq
+    }
+
+    let xx, yy
+
+    if (param < 0) {
+      xx = p1.x
+      yy = p1.y
+    } else if (param > 1) {
+      xx = p2.x
+      yy = p2.y
+    } else {
+      xx = p1.x + param * C
+      yy = p1.y + param * D
+    }
+
+    const dx = point.x - xx
+    const dy = point.y - yy
+    return Math.sqrt(dx * dx + dy * dy)
+  }
+
+  async function dispatchAnnotationCreated(annotation: PdfAnnotation) {
+    // Set saving state
+    const event: AnnotationEvent = {
       type: 'create',
       annotation,
       user_id: annotation.user_id,
-      timestamp: annotation.created_at
-    })
+      timestamp: annotation.created_at,
+      planId,
+      projectId,
+      saving: true
+    }
+    
+    dispatch('annotation-created', event)
+
+    // Save to database if we have the necessary context
+    if (planId && projectId) {
+      try {
+        const user = await getCurrentUser()
+        if (!user) {
+          dispatch('annotation-created', {
+            ...event,
+            saving: false,
+            error: 'User not authenticated'
+          })
+          return
+        }
+
+        // Set the user ID on the annotation
+        annotation.user_id = user.id
+
+        const result = await pdfAnnotationsService.createAnnotation({
+          planId,
+          projectId,
+          annotation
+        })
+
+        if (result.success && result.data) {
+          // Update annotation with saved data (including any server-generated fields)
+          const savedAnnotation = result.data
+          dispatch('annotation-created', {
+            type: 'create',
+            annotation: savedAnnotation,
+            user_id: savedAnnotation.user_id,
+            timestamp: savedAnnotation.created_at,
+            planId,
+            projectId,
+            saving: false
+          })
+        } else {
+          dispatch('annotation-created', {
+            ...event,
+            saving: false,
+            error: result.error || 'Failed to save annotation'
+          })
+        }
+      } catch (error) {
+        dispatch('annotation-created', {
+          ...event,
+          saving: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        })
+      }
+    } else {
+      // No database context, just dispatch without saving
+      dispatch('annotation-created', {
+        ...event,
+        saving: false
+      })
+    }
+
     currentAnnotation = null
   }
 
   function generateId(): string {
-    return `annotation_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+    // Generate a UUID v4 compatible string
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+      const r = Math.random() * 16 | 0
+      const v = c == 'x' ? r : (r & 0x3 | 0x8)
+      return v.toString(16)
+    })
   }
 
   // Track dimensions to avoid unnecessary re-setup
@@ -611,12 +893,6 @@
   // Re-setup canvas when dimensions or scale change
   $effect(() => {
     if (canvasWidth && canvasHeight && (canvasWidth !== lastCanvasWidth || canvasHeight !== lastCanvasHeight || pdfScale !== lastPdfScale)) {
-      console.log('[PdfAnnotationLayer] Canvas properties changed:', { 
-        canvasWidth, canvasHeight, pdfScale,
-        lastCanvasWidth, lastCanvasHeight, lastPdfScale,
-        dimensionsChanged: canvasWidth !== lastCanvasWidth || canvasHeight !== lastCanvasHeight,
-        scaleChanged: pdfScale !== lastPdfScale
-      })
       lastCanvasWidth = canvasWidth
       lastCanvasHeight = canvasHeight
       lastPdfScale = pdfScale
@@ -633,7 +909,6 @@
     const annotationsHash = JSON.stringify(annotations.map(a => ({ id: a.id, coordinates: a.coordinates, properties: a.properties })))
     
     if (annotations.length !== lastAnnotationsLength || annotationsHash !== lastAnnotationsHash) {
-      console.log('[PdfAnnotationLayer] Annotations changed, redrawing')
       lastAnnotationsLength = annotations.length
       lastAnnotationsHash = annotationsHash
       redrawAnnotations()
@@ -644,6 +919,9 @@
 <div 
   bind:this={layerRef}
   class="annotation-layer absolute inset-0 pointer-events-auto"
+  class:select-mode={drawingState.activeTool === 'select'}
+  class:pan-mode={drawingState.activeTool === 'pan'}
+  class:zoom-mode={drawingState.activeTool === 'zoom'}
   style="width: {canvasWidth}px; height: {canvasHeight}px;"
 >
   <!-- Main drawing canvas for permanent annotations -->
@@ -665,13 +943,21 @@
     <div class="absolute inset-0 pointer-events-none">
       <!-- Selection handles for selected annotations -->
       {#each annotations.filter(a => drawingState.selectedAnnotations.includes(a.id)) as annotation}
+        {@const pdfCoords = annotation.coordinates.pdfCoords}
+        {@const currentScale = pdfScale}
+        {@const scaledCoords = {
+          x: pdfCoords.x * currentScale,
+          y: canvasHeight - (pdfCoords.y * currentScale) - (pdfCoords.height ? pdfCoords.height * currentScale : 0),
+          width: pdfCoords.width ? pdfCoords.width * currentScale : 4,
+          height: pdfCoords.height ? pdfCoords.height * currentScale : 4
+        }}
         <div 
           class="absolute border-2 border-blue-500 pointer-events-auto"
           style="
-            left: {annotation.coordinates.canvasCoords.x}px;
-            top: {annotation.coordinates.canvasCoords.y}px;
-            width: {annotation.coordinates.canvasCoords.width || 4}px;
-            height: {annotation.coordinates.canvasCoords.height || 4}px;
+            left: {scaledCoords.x}px;
+            top: {scaledCoords.y}px;
+            width: {scaledCoords.width}px;
+            height: {scaledCoords.height}px;
           "
         >
           <!-- Resize handles -->
@@ -701,5 +987,23 @@
   
   .annotation-layer.pan-mode:active {
     cursor: grabbing;
+  }
+  
+  .annotation-layer.zoom-mode {
+    cursor: zoom-in;
+  }
+  
+  /* Hover effects for different tools */
+  .annotation-layer.select-mode:hover {
+    cursor: pointer;
+  }
+  
+  .annotation-layer.zoom-mode:hover {
+    cursor: zoom-in;
+  }
+  
+  /* When holding shift with zoom tool for zoom out */
+  .annotation-layer.zoom-mode:hover:active {
+    cursor: zoom-out;
   }
 </style>

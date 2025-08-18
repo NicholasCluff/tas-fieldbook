@@ -37,20 +37,7 @@
   })
 
   async function generateThumbnails() {
-    console.log('[PdfThumbnailPanel] generateThumbnails called:', {
-      pdfDoc: !!pdfDoc,
-      isGenerating,
-      hasGenerated,
-      totalPages
-    })
-    
     if (!pdfDoc || isGenerating || hasGenerated || totalPages === 0) {
-      console.log('[PdfThumbnailPanel] Skipping thumbnail generation:', {
-        noPdfDoc: !pdfDoc,
-        isGenerating,
-        hasGenerated,
-        noPages: totalPages === 0
-      })
       return
     }
 
@@ -58,11 +45,9 @@
     thumbnails = new Array(totalPages).fill(null)
     thumbnailDataUrls = new Array(totalPages).fill(null)
     generatedCount = 0
-    console.log('[PdfThumbnailPanel] Starting thumbnail generation for', totalPages, 'pages')
 
     try {
       for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
-        console.log('[PdfThumbnailPanel] Generating thumbnail for page', pageNum)
         const thumbnail = await generateThumbnail(pageNum)
         // Update the array in a way that triggers reactivity
         const newThumbnails = [...thumbnails]
@@ -72,12 +57,10 @@
         thumbnails = newThumbnails
         thumbnailDataUrls = newThumbnailDataUrls
         generatedCount++
-        console.log('[PdfThumbnailPanel] Generated thumbnail for page', pageNum, 'success:', !!thumbnail, 'progress:', generatedCount, '/', totalPages, 'dataUrl:', !!newThumbnailDataUrls[pageNum - 1])
       }
       hasGenerated = true
-      console.log('[PdfThumbnailPanel] All thumbnails generated, total successful:', thumbnails.filter(t => t !== null).length)
     } catch (error) {
-      console.error('[PdfThumbnailPanel] Failed to generate thumbnails:', error)
+      // Ignore thumbnail generation errors
     } finally {
       isGenerating = false
     }
@@ -108,10 +91,9 @@
     } catch (error) {
       // Ignore transport destroyed and rendering cancelled errors
       if (error?.message?.includes('Transport destroyed') || error?.name === 'RenderingCancelledException') {
-        console.log(`Thumbnail generation cancelled for page ${pageNumber} (ignored):`, error.message)
         return null
       }
-      console.error(`Failed to generate thumbnail for page ${pageNumber}:`, error)
+      // Ignore other thumbnail generation errors
       return null
     }
   }
@@ -149,16 +131,16 @@
   
   // Regenerate thumbnails when PDF document changes
   $effect(() => {
-    console.log('[PdfThumbnailPanel] Effect triggered:', {
-      pdfDoc: !!pdfDoc,
-      totalPages,
-      lastPdfDoc: !!lastPdfDoc,
-      lastTotalPages,
-      different: pdfDoc !== lastPdfDoc || totalPages !== lastTotalPages
-    })
+    // console.log('[PdfThumbnailPanel] Effect triggered:', {
+    //   pdfDoc: !!pdfDoc,
+    //   totalPages,
+    //   lastPdfDoc: !!lastPdfDoc,
+    //   lastTotalPages,
+    //   different: pdfDoc !== lastPdfDoc || totalPages !== lastTotalPages
+    // })
     
     if (pdfDoc && (pdfDoc !== lastPdfDoc || totalPages !== lastTotalPages)) {
-      console.log('[PdfThumbnailPanel] PDF document changed, resetting generation state')
+      // console.log('[PdfThumbnailPanel] PDF document changed, resetting generation state')
       lastPdfDoc = pdfDoc
       lastTotalPages = totalPages
       hasGenerated = false
@@ -323,41 +305,21 @@
 <script context="module">
   // Custom action to draw thumbnail on canvas
   function drawThumbnail(canvas: HTMLCanvasElement, sourceCanvas: HTMLCanvasElement) {
-    console.log('[drawThumbnail] Initial draw:', { 
-      canvas: !!canvas, 
-      sourceCanvas: !!sourceCanvas,
-      sourceWidth: sourceCanvas?.width,
-      sourceHeight: sourceCanvas?.height 
-    })
-    
     const ctx = canvas.getContext('2d')
     if (ctx && sourceCanvas) {
       canvas.width = sourceCanvas.width
       canvas.height = sourceCanvas.height
       ctx.drawImage(sourceCanvas, 0, 0)
-      console.log('[drawThumbnail] Drew thumbnail on canvas:', { width: canvas.width, height: canvas.height })
-    } else {
-      console.warn('[drawThumbnail] Missing context or source canvas:', { ctx: !!ctx, sourceCanvas: !!sourceCanvas })
     }
 
     return {
       update(newSourceCanvas: HTMLCanvasElement) {
-        console.log('[drawThumbnail] Update draw:', { 
-          canvas: !!canvas, 
-          newSourceCanvas: !!newSourceCanvas,
-          sourceWidth: newSourceCanvas?.width,
-          sourceHeight: newSourceCanvas?.height 
-        })
-        
         const ctx = canvas.getContext('2d')
         if (ctx && newSourceCanvas) {
           canvas.width = newSourceCanvas.width
           canvas.height = newSourceCanvas.height
           ctx.clearRect(0, 0, canvas.width, canvas.height)
           ctx.drawImage(newSourceCanvas, 0, 0)
-          console.log('[drawThumbnail] Updated thumbnail on canvas:', { width: canvas.width, height: canvas.height })
-        } else {
-          console.warn('[drawThumbnail] Missing context or source canvas on update:', { ctx: !!ctx, newSourceCanvas: !!newSourceCanvas })
         }
       }
     }

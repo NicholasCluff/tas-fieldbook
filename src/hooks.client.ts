@@ -18,11 +18,11 @@ export const supabase = createBrowserClient(PUBLIC_SUPABASE_URL, PUBLIC_SUPABASE
 
 // Initialize auth state from server-side data and handle invalidation
 if (isBrowser()) {
-  console.log('[ClientHooks] Setting up auth state change listener');
+  // console.log('[ClientHooks] Setting up auth state change listener');
   
   // Listen for auth state changes and invalidate server data
   supabase.auth.onAuthStateChange((event, session) => {
-    console.log('[ClientHooks] Auth state change:', event, { hasSession: !!session });
+    // console.log('[ClientHooks] Auth state change:', event, { hasSession: !!session });
     
     if (event === 'SIGNED_IN' || event === 'SIGNED_OUT' || event === 'TOKEN_REFRESHED') {
       // console.log('[ClientHooks] Invalidating all server data');

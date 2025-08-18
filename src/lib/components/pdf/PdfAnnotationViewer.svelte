@@ -2,6 +2,8 @@
   import { onMount, onDestroy } from 'svelte'
   import { createEventDispatcher } from 'svelte'
   import { browser } from '$app/environment'
+  import { dragscroll } from '@svelte-put/dragscroll'
+  import { pdfAnnotationsService } from '$lib/services/pdfAnnotations.service.js'
   import type { 
     PdfAnnotation, 
     DrawingState, 
@@ -21,6 +23,7 @@
   interface Props {
     src: string
     projectId: string
+    planId?: string
     width?: number
     height?: number
     config?: Partial<PdfViewerConfig>
@@ -31,6 +34,7 @@
   let { 
     src, 
     projectId,
+    planId,
     width = 800, 
     height = 600,
     config = {},
@@ -52,6 +56,7 @@
 
   // Component state
   let containerRef = $state<HTMLDivElement>()
+  let scrollContainerRef = $state<HTMLDivElement>()
   let canvasRef = $state<HTMLCanvasElement>()
   let annotationLayerRef = $state<HTMLDivElement>()
   
@@ -63,6 +68,11 @@
   let renderTask = $state<any>(null)
   let isLoadingPdf = $state(false)
   let isRendering = $state(false)
+  let loadingAnnotations = $state(false)
+  let annotationError = $state('')
+  
+  // Manage annotations state
+  let allAnnotations = $state<PdfAnnotation[]>([...annotations])
   
   // Canvas scaling information for annotation layer
   let canvasDisplayWidth = $state(0)
@@ -93,7 +103,7 @@
     gridSize: 10,
     showGrid: false,
     zoom: 1,
-    pan: { x: 0, y: 0 },
+    pan: { x: 0, y: 0 }, // Keep for compatibility but no longer used for transforms
     rotation: 0
   })
 
@@ -137,7 +147,7 @@
 
   // Filtered annotations for current page
   let pageAnnotations = $derived(
-    annotations.filter(annotation => annotation.pageNumber === currentPage)
+    allAnnotations.filter(annotation => annotation.pageNumber === currentPage)
   )
 
   // Lazy load PDF.js only in browser
@@ -147,10 +157,8 @@
     try {
       pdfjsLib = await import('pdfjs-dist')
       pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdfjs/pdf.worker.min.mjs'
-      console.log('[PdfAnnotationViewer] PDF.js loaded successfully')
       return pdfjsLib
     } catch (err) {
-      console.error('[PdfAnnotationViewer] Failed to load PDF.js:', err)
       throw err
     }
   }
@@ -158,6 +166,10 @@
   onMount(() => {
     if (src) {
       loadPdf()
+    }
+    // Load annotations from database if we have the context
+    if (planId) {
+      loadAnnotations()
     }
   })
 
@@ -170,7 +182,7 @@
       try {
         renderTask.cancel()
       } catch (e) {
-        console.log('[PdfAnnotationViewer] Cleanup render task cancel failed (ignored):', e.message)
+        // Ignore cleanup errors
       }
       renderTask = null
     }
@@ -178,7 +190,7 @@
       try {
         pdfDoc.destroy()
       } catch (e) {
-        console.log('[PdfAnnotationViewer] Cleanup PDF destroy failed (ignored):', e.message)
+        // Ignore cleanup errors
       }
       pdfDoc = null
     }
@@ -188,7 +200,6 @@
 
   async function loadPdf() {
     if (!browser || isLoadingPdf) {
-      console.log('[PdfAnnotationViewer] Skipping PDF load - not in browser or already loading')
       return
     }
 
@@ -196,7 +207,6 @@
       isLoadingPdf = true
       loading = true
       error = ''
-      console.log('[PdfAnnotationViewer] Loading PDF from:', src)
 
       // Load PDF.js first
       const pdfLib = await loadPdfJs()
@@ -211,12 +221,10 @@
       }
 
       const pdfArrayBuffer = await response.arrayBuffer()
-      console.log('[PdfAnnotationViewer] PDF data loaded, size:', pdfArrayBuffer.byteLength)
 
       // Load PDF document
       pdfDoc = await pdfLib.getDocument({ data: pdfArrayBuffer }).promise
       totalPages = pdfDoc.numPages
-      console.log('[PdfAnnotationViewer] PDF loaded successfully, pages:', totalPages)
 
       // Initialize tracking variables before first render
       lastPageRendered = currentPage
@@ -231,7 +239,6 @@
       dispatch('viewer-ready')
 
     } catch (err) {
-      console.error('[PdfAnnotationViewer] PDF loading error:', err)
       error = err instanceof Error ? err.message : 'Failed to load PDF'
       loading = false
       dispatch('error', { 
@@ -245,18 +252,11 @@
 
   async function renderPage(pageNumber: number) {
     if (!pdfDoc || !canvasRef || !browser || isRendering) {
-      console.log('[PdfAnnotationViewer] Cannot render - missing requirements:', {
-        pdfDoc: !!pdfDoc,
-        canvasRef: !!canvasRef,
-        browser,
-        isRendering
-      })
       return
     }
 
     try {
       isRendering = true
-      console.log('[PdfAnnotationViewer] Rendering page:', pageNumber, 'of', totalPages)
       
       // Cancel any ongoing render task
       if (renderTask) {
@@ -264,7 +264,6 @@
           renderTask.cancel()
         } catch (e) {
           // Ignore cancel errors
-          console.log('[PdfAnnotationViewer] Render task cancel failed (ignored):', e.message)
         }
         renderTask = null
       }
@@ -304,7 +303,6 @@
       renderTask = page.render(renderContext)
       await renderTask.promise
       renderTask = null
-      console.log('[PdfAnnotationViewer] Page', pageNumber, 'rendered successfully')
 
       // Update annotation layer dimensions
       if (annotationLayerRef) {
@@ -314,15 +312,13 @@
 
     } catch (err) {
       if (err?.name !== 'RenderingCancelledException' && !err?.message?.includes('Transport destroyed')) {
-        console.error('[PdfAnnotationViewer] Page rendering error:', err)
         error = 'Failed to render PDF page'
         dispatch('error', { 
           message: error, 
           error: err instanceof Error ? err : undefined 
         })
-      } else {
-        console.log('[PdfAnnotationViewer] Render cancelled or transport destroyed (ignored):', err.message)
       }
+      // Ignore cancelled or destroyed renders
     } finally {
       isRendering = false
     }
@@ -347,15 +343,6 @@
       )
       
       if (needsRerender) {
-        console.log('[PdfAnnotationViewer] Effect triggering re-render:', {
-          page: currentPage,
-          lastPage: lastPageRendered,
-          zoom: currentZoom,
-          lastZoom,
-          rotation: currentRotation,
-          lastRotation
-        })
-        
         lastPageRendered = currentPage
         lastZoom = currentZoom
         lastRotation = currentRotation
@@ -368,6 +355,31 @@
     }
   })
 
+  // Load annotations from database
+  async function loadAnnotations() {
+    if (!planId) {
+      return
+    }
+
+    try {
+      loadingAnnotations = true
+      annotationError = ''
+
+      const result = await pdfAnnotationsService.getAnnotations(planId)
+      
+      if (result.success && result.data) {
+        allAnnotations = result.data
+        dispatch('annotations-loaded', result.data)
+      } else {
+        annotationError = result.error || 'Failed to load annotations'
+      }
+    } catch (error) {
+      annotationError = error instanceof Error ? error.message : 'Unknown error'
+    } finally {
+      loadingAnnotations = false
+    }
+  }
+
   // Re-load PDF when src changes
   let lastSrc = $state('')
   $effect(() => {
@@ -375,6 +387,15 @@
       lastSrc = src
       cleanup()
       loadPdf()
+    }
+  })
+
+  // Re-load annotations when planId changes
+  let lastPlanId = $state('')
+  $effect(() => {
+    if (planId && planId !== lastPlanId) {
+      lastPlanId = planId
+      loadAnnotations()
     }
   })
 
@@ -437,13 +458,37 @@
   // Annotation event handlers
   function handleAnnotationCreated(event: CustomEvent<AnnotationEvent>) {
     const annotation = event.detail.annotation
-    annotations = [...annotations, annotation]
+    
+    // Handle errors in saving
+    if (event.detail.error) {
+      // TODO: Show user-friendly error message
+      return
+    }
+    
+    // Only add to local annotations if successfully saved or if no database context
+    if (!event.detail.saving) {
+      // For newly created annotations, always add them (the ID might have changed from database)
+      if (event.detail.type === 'create') {
+        // Remove any temporary annotation with old ID and add the saved one
+        allAnnotations = allAnnotations.filter(a => a.id !== annotation.id)
+        allAnnotations = [...allAnnotations, annotation]
+      } else {
+        // For updates, find and replace existing annotation
+        const existingIndex = allAnnotations.findIndex(a => a.id === annotation.id)
+        if (existingIndex >= 0) {
+          allAnnotations[existingIndex] = annotation
+        } else {
+          allAnnotations = [...allAnnotations, annotation]
+        }
+      }
+    }
+    
     dispatch('annotation-created', event.detail)
   }
 
   function handleAnnotationUpdated(event: CustomEvent<AnnotationEvent>) {
     const updatedAnnotation = event.detail.annotation
-    annotations = annotations.map(a => 
+    allAnnotations = allAnnotations.map(a => 
       a.id === updatedAnnotation.id ? updatedAnnotation : a
     )
     dispatch('annotation-updated', event.detail)
@@ -451,8 +496,63 @@
 
   function handleAnnotationDeleted(event: CustomEvent<AnnotationEvent>) {
     const deletedAnnotation = event.detail.annotation
-    annotations = annotations.filter(a => a.id !== deletedAnnotation.id)
+    allAnnotations = allAnnotations.filter(a => a.id !== deletedAnnotation.id)
     dispatch('annotation-deleted', event.detail)
+  }
+
+  // Dragscroll configuration
+  let dragscrollEnabled = $derived(drawingState.activeTool === 'pan')
+  
+  // Custom dragscroll options
+  let dragscrollOptions = $derived({
+    enabled: dragscrollEnabled,
+    axis: 'both'
+  })
+  
+  // Handle dragscroll events
+  function handleDragscrollStart(event: CustomEvent) {
+    // Add visual feedback when drag starts
+    if (scrollContainerRef) {
+      scrollContainerRef.style.cursor = 'grabbing'
+    }
+  }
+  
+  function handleDragscrollEnd(event: CustomEvent) {
+    // Reset cursor when drag ends
+    if (scrollContainerRef) {
+      scrollContainerRef.style.cursor = ''
+    }
+  }
+
+  // Zoom at point event handler
+  function handleZoomAtPoint(event: CustomEvent<{ factor: number; center: { x: number; y: number }; point: any }>) {
+    const { factor, center } = event.detail
+    const currentZoom = drawingState.zoom
+    const newZoom = Math.max(viewerConfig.minZoom, Math.min(viewerConfig.maxZoom, currentZoom * factor))
+    
+    // Calculate pan offset to zoom into the clicked point
+    const zoomRatio = newZoom / currentZoom
+    const canvasCenter = {
+      x: canvasDisplayWidth / 2,
+      y: canvasDisplayHeight / 2
+    }
+    
+    // Adjust pan to keep the clicked point in the same screen position
+    const clickOffset = {
+      x: (center.x * canvasDisplayWidth) - canvasCenter.x,
+      y: (center.y * canvasDisplayHeight) - canvasCenter.y
+    }
+    
+    const newPan = {
+      x: drawingState.pan.x - clickOffset.x * (zoomRatio - 1),
+      y: drawingState.pan.y - clickOffset.y * (zoomRatio - 1)
+    }
+    
+    // Update zoom and pan
+    drawingState.zoom = newZoom
+    drawingState.pan = newPan
+    
+    dispatch('zoom-changed', { zoom: newZoom })
   }
 
   // Keyboard shortcuts
@@ -503,6 +603,27 @@
         drawingState.selectedAnnotations = []
         drawingState.activeTool = 'select'
         break
+      case 'v':
+      case 'V':
+        if (!event.ctrlKey && !event.metaKey) {
+          event.preventDefault()
+          selectTool('select')
+        }
+        break
+      case 'h':
+      case 'H':
+        if (!event.ctrlKey && !event.metaKey) {
+          event.preventDefault()
+          selectTool('pan')
+        }
+        break
+      case 'z':
+      case 'Z':
+        if (!event.ctrlKey && !event.metaKey) {
+          event.preventDefault()
+          selectTool('zoom')
+        }
+        break
     }
   }
 
@@ -527,7 +648,7 @@
   }
 
   export function getSelectedAnnotations(): PdfAnnotation[] {
-    return annotations.filter(a => drawingState.selectedAnnotations.includes(a.id))
+    return allAnnotations.filter(a => drawingState.selectedAnnotations.includes(a.id))
   }
 
   export function clearSelection(): void {
@@ -599,12 +720,42 @@
     {/if}
 
     <!-- PDF Display Area -->
-    <div class="flex-1 relative overflow-auto bg-gray-200">
+    <div 
+      bind:this={scrollContainerRef}
+      class="flex-1 relative overflow-auto bg-gray-200"
+      use:dragscroll={dragscrollOptions}
+      ondragscrollstart={handleDragscrollStart}
+      ondragscrollend={handleDragscrollEnd}
+    >
       {#if loading}
         <div class="absolute inset-0 flex items-center justify-center bg-white">
           <div class="text-center">
             <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-2"></div>
             <div class="text-gray-500 text-sm">Loading PDF...</div>
+          </div>
+        </div>
+      {/if}
+
+      {#if loadingAnnotations}
+        <div class="absolute top-4 right-4 bg-white bg-opacity-90 rounded-lg p-3 shadow-lg z-10">
+          <div class="flex items-center space-x-2">
+            <div class="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+            <div class="text-gray-600 text-sm">Loading annotations...</div>
+          </div>
+        </div>
+      {/if}
+
+      {#if annotationError}
+        <div class="absolute top-4 right-4 bg-red-50 border border-red-200 rounded-lg p-3 shadow-lg z-10">
+          <div class="flex items-center space-x-2">
+            <div class="text-red-500 text-sm">⚠</div>
+            <div class="text-red-700 text-sm">Error: {annotationError}</div>
+            <button 
+              class="text-red-600 hover:text-red-800 text-sm underline"
+              onclick={loadAnnotations}
+            >
+              Retry
+            </button>
           </div>
         </div>
       {/if}
@@ -623,32 +774,33 @@
           </div>
         </div>
       {:else if !loading}
-        <div class="flex items-center justify-center p-4">
+        <div class="flex items-center justify-center p-20" style="min-width: max(100%, {canvasDisplayWidth + 400}px); min-height: max(100%, {canvasDisplayHeight + 400}px);">
           <div class="relative shadow-lg">
             <!-- PDF Canvas -->
             <canvas
               bind:this={canvasRef}
               class="border border-gray-300 bg-white"
-              style="transform: translate({drawingState.pan.x}px, {drawingState.pan.y}px);"
             ></canvas>
             
             <!-- Annotation Layer -->
             <div 
               bind:this={annotationLayerRef}
               class="absolute top-0 left-0 pointer-events-none"
-              style="transform: translate({drawingState.pan.x}px, {drawingState.pan.y}px);"
             >
               <PdfAnnotationLayer
                 annotations={pageAnnotations}
-                {drawingState}
+                bind:drawingState
                 {viewerConfig}
                 canvasWidth={canvasDisplayWidth}
                 canvasHeight={canvasDisplayHeight}
                 {pdfScale}
                 {currentPage}
+                {planId}
+                {projectId}
                 on:annotation-created={handleAnnotationCreated}
                 on:annotation-updated={handleAnnotationUpdated}
                 on:annotation-deleted={handleAnnotationDeleted}
+                on:zoom-at-point={handleZoomAtPoint}
               />
             </div>
 

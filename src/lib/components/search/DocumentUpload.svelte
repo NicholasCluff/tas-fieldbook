@@ -57,37 +57,37 @@
 		})
 		
 		if (file.type !== 'application/pdf') {
-			console.log(`❌ [DocumentUpload] File type validation failed: ${file.type}`)
+			// console.log(`❌ [DocumentUpload] File type validation failed: ${file.type}`)
 			return { valid: false, error: 'Only PDF files are allowed' }
 		}
 		if (file.size > maxFileSize) {
-			console.log(`❌ [DocumentUpload] File size validation failed: ${file.size} > ${maxFileSize}`)
+			// console.log(`❌ [DocumentUpload] File size validation failed: ${file.size} > ${maxFileSize}`)
 			return { valid: false, error: `File size must be less than ${formatFileSize(maxFileSize)}` }
 		}
 		
 		// Validate PDF structure
 		try {
-			console.log(`🔍 [DocumentUpload] Starting PDF structure validation for: ${file.name}`)
+			// console.log(`🔍 [DocumentUpload] Starting PDF structure validation for: ${file.name}`)
 			const validationResult = await pdfProcessingService.validatePDF(file)
-			console.log(`🔍 [DocumentUpload] PDF validation result:`, validationResult)
+			// console.log(`🔍 [DocumentUpload] PDF validation result:`, validationResult)
 			
 			if (!validationResult.success) {
-				console.log(`❌ [DocumentUpload] PDF validation service failed: ${validationResult.error}`)
+				// console.log(`❌ [DocumentUpload] PDF validation service failed: ${validationResult.error}`)
 				return { valid: false, error: `PDF validation failed: ${validationResult.error}` }
 			}
 			
 			if (!validationResult.data?.isValid) {
 				const errors = validationResult.data?.errors?.join(', ') || 'Unknown PDF error'
-				console.log(`❌ [DocumentUpload] PDF structure invalid:`, errors)
+				// console.log(`❌ [DocumentUpload] PDF structure invalid:`, errors)
 				return { valid: false, error: `Invalid PDF: ${errors}` }
 			}
 			
 			if (validationResult.data?.encrypted) {
-				console.log(`❌ [DocumentUpload] PDF is encrypted`)
+				// console.log(`❌ [DocumentUpload] PDF is encrypted`)
 				return { valid: false, error: 'Encrypted PDFs are not supported' }
 			}
 			
-			console.log(`✅ [DocumentUpload] File validation successful for: ${file.name}`)
+			// console.log(`✅ [DocumentUpload] File validation successful for: ${file.name}`)
 			return { valid: true }
 		} catch (error) {
 			console.error(`❌ [DocumentUpload] PDF validation error:`, error)
@@ -128,33 +128,33 @@
 	}
 	
 	async function handleFiles(newFiles: File[]) {
-		console.log(`📁 [DocumentUpload] Processing ${newFiles.length} files:`, newFiles.map(f => f.name))
+		// console.log(`📁 [DocumentUpload] Processing ${newFiles.length} files:`, newFiles.map(f => f.name))
 		processingStatus = 'Validating files...'
 		
 		// Validate all files
-		console.log(`🔍 [DocumentUpload] Starting validation for ${newFiles.length} files`)
+		// console.log(`🔍 [DocumentUpload] Starting validation for ${newFiles.length} files`)
 		const validationPromises = newFiles.map(async (file, index) => {
-			console.log(`🔍 [DocumentUpload] Validating file ${index + 1}/${newFiles.length}: ${file.name}`)
+			// console.log(`🔍 [DocumentUpload] Validating file ${index + 1}/${newFiles.length}: ${file.name}`)
 			const validation = await validateFile(file)
-			console.log(`🔍 [DocumentUpload] File ${index + 1} validation result:`, { file: file.name, ...validation })
+			// console.log(`🔍 [DocumentUpload] File ${index + 1} validation result:`, { file: file.name, ...validation })
 			return { file, ...validation }
 		})
 		
 		const results = await Promise.all(validationPromises)
 		validationResults = results
-		console.log(`🔍 [DocumentUpload] All validations complete:`, results)
+		// console.log(`🔍 [DocumentUpload] All validations complete:`, results)
 		
 		// Show errors for invalid files
 		results.forEach(result => {
 			if (!result.valid) {
-				console.log(`❌ [DocumentUpload] Invalid file error: ${result.file.name} - ${result.error}`)
+				// console.log(`❌ [DocumentUpload] Invalid file error: ${result.file.name} - ${result.error}`)
 				dispatch('error', { message: `${result.file.name}: ${result.error}` })
 			}
 		})
 		
 		// Add valid files
 		const validFiles = results.filter(r => r.valid).map(r => r.file)
-		console.log(`✅ [DocumentUpload] ${validFiles.length} valid files out of ${newFiles.length}:`, validFiles.map(f => f.name))
+		// console.log(`✅ [DocumentUpload] ${validFiles.length} valid files out of ${newFiles.length}:`, validFiles.map(f => f.name))
 		
 		if (multiple) {
 			files = [...files, ...validFiles]
@@ -165,7 +165,7 @@
 			}
 		}
 		
-		console.log(`📁 [DocumentUpload] Final files array:`, files.map(f => f.name))
+		// console.log(`📁 [DocumentUpload] Final files array:`, files.map(f => f.name))
 		processingStatus = ''
 	}
 	
@@ -189,7 +189,7 @@
 	// Start analysis - opens the modal for the first file
 	async function startAnalysis() {
 		if (files.length === 0) {
-			console.log(`⚠️ [DocumentUpload] Analysis attempted with no files`)
+			// console.log(`⚠️ [DocumentUpload] Analysis attempted with no files`)
 			return
 		}
 		
@@ -198,7 +198,7 @@
 		showAnalysisModal = true
 		analysisProgress = { stage: 'analyzing', progress: 0, message: 'Starting analysis...' }
 		
-		console.log(`🔍 [DocumentUpload] Starting analysis for: ${currentFile.name}`)
+		// console.log(`🔍 [DocumentUpload] Starting analysis for: ${currentFile.name}`)
 		addDebugLog(`Starting analysis for: ${currentFile.name}`)
 		
 		try {
@@ -242,7 +242,7 @@
 			currentExtractedPlans = plans
 			analysisProgress = { stage: 'complete', progress: 100, message: 'Analysis complete' }
 			
-			console.log(`✅ [DocumentUpload] Analysis complete:`, { plans: plans.length, metadata })
+			// console.log(`✅ [DocumentUpload] Analysis complete:`, { plans: plans.length, metadata })
 			addDebugLog(`✅ Analysis complete: ${plans.length} plans detected`)
 			
 		} catch (error) {
@@ -259,7 +259,7 @@
 			return
 		}
 		
-		console.log(`🚀 [DocumentUpload] Starting final upload with ${plans.length} plans`)
+		// console.log(`🚀 [DocumentUpload] Starting final upload with ${plans.length} plans`)
 		addDebugLog(`Starting final upload with ${plans.length} plans`)
 		
 		uploading = true
@@ -293,7 +293,7 @@
 			}
 			
 			// Create document record in database
-			console.log(`💾 [DocumentUpload] Creating document record`)
+			// console.log(`💾 [DocumentUpload] Creating document record`)
 			const documentRecord = await searchDocumentsService.createDocumentRecord(
 				projectId,
 				title,
@@ -312,7 +312,7 @@
 			uploadProgress = 100
 			currentStage = 'complete'
 			processingStatus = 'Upload complete!'
-			console.log(`✅ [DocumentUpload] Upload successful`)
+			// console.log(`✅ [DocumentUpload] Upload successful`)
 			addDebugLog(`✅ Upload complete`)
 			
 			// Wait a bit to show completion

@@ -49,7 +49,7 @@
     try {
       loading = true
       error = ''
-      console.log('[SimplePdfViewer] Loading PDF from:', src)
+      // console.log('[SimplePdfViewer] Loading PDF from:', src)
 
       // Fetch PDF data as blob to handle authentication
       const response = await fetch(src)
@@ -58,12 +58,12 @@
       }
 
       const pdfArrayBuffer = await response.arrayBuffer()
-      console.log('[SimplePdfViewer] PDF data loaded, size:', pdfArrayBuffer.byteLength)
+      // console.log('[SimplePdfViewer] PDF data loaded, size:', pdfArrayBuffer.byteLength)
 
       // Load PDF document
       pdfDoc = await pdfjsLib.getDocument({ data: pdfArrayBuffer }).promise
       totalPages = pdfDoc.numPages
-      console.log('[SimplePdfViewer] PDF loaded successfully, pages:', totalPages)
+      // console.log('[SimplePdfViewer] PDF loaded successfully, pages:', totalPages)
 
       // Render first page
       await renderPage(currentPage)
@@ -77,12 +77,12 @@
 
   async function renderPage(pageNumber: number) {
     if (!pdfDoc || !canvasRef) {
-      console.log('[SimplePdfViewer] Cannot render - missing pdfDoc or canvas:', { pdfDoc: !!pdfDoc, canvasRef: !!canvasRef })
+      // console.log('[SimplePdfViewer] Cannot render - missing pdfDoc or canvas:', { pdfDoc: !!pdfDoc, canvasRef: !!canvasRef })
       return
     }
 
     try {
-      console.log('[SimplePdfViewer] Rendering page:', pageNumber, 'of', totalPages)
+      // console.log('[SimplePdfViewer] Rendering page:', pageNumber, 'of', totalPages)
       
       // Cancel any ongoing render task
       if (renderTask) {
@@ -115,7 +115,7 @@
 
       renderTask = page.render(renderContext)
       await renderTask.promise
-      console.log('[SimplePdfViewer] Page', pageNumber, 'rendered successfully')
+      // console.log('[SimplePdfViewer] Page', pageNumber, 'rendered successfully')
     } catch (err) {
       if (err?.name !== 'RenderingCancelledException') {
         console.error('[SimplePdfViewer] Page rendering error:', err)

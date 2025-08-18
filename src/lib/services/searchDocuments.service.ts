@@ -45,9 +45,9 @@ class SearchDocumentsService {
       }
 
       // Get current user
-      console.log(`👤 [SearchDocuments] Getting current user...`)
+      // console.log(`👤 [SearchDocuments] Getting current user...`)
       const { data: { user } } = await supabase.auth.getUser()
-      console.log(`👤 [SearchDocuments] Current user:`, user?.id ? { id: user.id, email: user.email } : 'No user')
+      // console.log(`👤 [SearchDocuments] Current user:`, user?.id ? { id: user.id, email: user.email } : 'No user')
       
       if (!user) {
         console.error(`❌ [SearchDocuments] User not authenticated`)
@@ -64,7 +64,7 @@ class SearchDocumentsService {
         uploaded_by: user.id
       }
       
-      console.log(`💾 [SearchDocuments] Creating database record:`, documentData)
+      // console.log(`💾 [SearchDocuments] Creating database record:`, documentData)
 
       const { data, error } = await supabase
         .from('search_documents')
@@ -72,17 +72,17 @@ class SearchDocumentsService {
         .select()
         .single()
 
-      console.log(`💾 [SearchDocuments] Database insert result:`, { data, error })
+      // console.log(`💾 [SearchDocuments] Database insert result:`, { data, error })
 
       if (error) {
-        console.error(`❌ [SearchDocuments] Database insert failed:`, error)
+        // console.error(`❌ [SearchDocuments] Database insert failed:`, error)
         // Clean up uploaded file if database insert fails
-        console.log(`🧹 [SearchDocuments] Cleaning up uploaded file: ${filePath}`)
+        // console.log(`🧹 [SearchDocuments] Cleaning up uploaded file: ${filePath}`)
         await supabase.storage.from('project-files').remove([filePath])
         return { success: false, error: `Database error: ${error.message}` }
       }
 
-      console.log(`✅ [SearchDocuments] Upload successful:`, data)
+      // console.log(`✅ [SearchDocuments] Upload successful:`, data)
       return { success: true, data }
     } catch (error) {
       console.error(`❌ [SearchDocuments] Unexpected error:`, error)
@@ -385,7 +385,7 @@ class SearchDocumentsService {
         status: 'not_required' // Since we're processing client-side, no review needed
       }
 
-      console.log(`💾 [SearchDocuments] Inserting document record:`, documentData)
+      // console.log(`💾 [SearchDocuments] Inserting document record:`, documentData)
 
       const { data: document, error: docError } = await supabase
         .from('search_documents')
@@ -400,7 +400,7 @@ class SearchDocumentsService {
 
       // Create survey plan records for each extracted plan
       if (plans.length > 0) {
-        console.log(`📋 [SearchDocuments] Creating ${plans.length} plan records...`)
+        // console.log(`📋 [SearchDocuments] Creating ${plans.length} plan records...`)
         
         const planInserts = plans.map((plan, index) => {
           // Create page range array
@@ -434,7 +434,7 @@ class SearchDocumentsService {
         }
       }
 
-      console.log(`✅ [SearchDocuments] Document record created successfully:`, document)
+      // console.log(`✅ [SearchDocuments] Document record created successfully:`, document)
       return { success: true, data: document }
 
     } catch (error) {

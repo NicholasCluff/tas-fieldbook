@@ -3,7 +3,7 @@ import type { Handle } from '@sveltejs/kit'
 import { PUBLIC_SUPABASE_URL, PUBLIC_SUPABASE_ANON_KEY } from '$env/static/public'
 
 export const handle: Handle = async ({ event, resolve }) => {
-  console.log('[ServerHooks] Processing request for:', event.url.pathname);
+  // console.log('[ServerHooks] Processing request for:', event.url.pathname);
   
   // Create a Supabase client for server-side operations
   event.locals.supabase = createServerClient(PUBLIC_SUPABASE_URL, PUBLIC_SUPABASE_ANON_KEY, {
@@ -29,12 +29,12 @@ export const handle: Handle = async ({ event, resolve }) => {
    * JWT before returning the session.
    */
   event.locals.safeGetSession = async () => {
-    console.log('[ServerHooks] Getting safe session...');
+    // console.log('[ServerHooks] Getting safe session...');
     const {
       data: { session },
     } = await event.locals.supabase.auth.getSession()
     
-    console.log('[ServerHooks] Got session:', session ? 'exists' : 'null');
+    // console.log('[ServerHooks] Got session:', session ? 'exists' : 'null');
     
     if (!session) {
       return { session: null, user: null }
@@ -46,12 +46,12 @@ export const handle: Handle = async ({ event, resolve }) => {
     } = await event.locals.supabase.auth.getUser()
     
     if (error) {
-      console.log('[ServerHooks] JWT validation failed:', error.message);
+      // console.log('[ServerHooks] JWT validation failed:', error.message);
       // JWT validation has failed
       return { session: null, user: null }
     }
 
-    console.log('[ServerHooks] User validated successfully');
+    // console.log('[ServerHooks] User validated successfully');
     return { session, user }
   }
 

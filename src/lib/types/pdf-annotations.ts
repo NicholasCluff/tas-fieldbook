@@ -15,6 +15,7 @@ export interface PdfAnnotation {
   updated_at: string
   user_id: string
   project_id: string
+  plan_id?: string // Optional plan ID for database integration
 }
 
 // Annotation types supported
@@ -248,6 +249,12 @@ export interface AnnotationEvent {
   previousState?: Partial<PdfAnnotation>
   user_id: string
   timestamp: string
+  // Optional database context
+  planId?: string
+  projectId?: string
+  // Error handling
+  error?: string
+  saving?: boolean
 }
 
 export interface ViewerEvent {

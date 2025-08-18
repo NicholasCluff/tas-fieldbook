@@ -8,12 +8,12 @@
 
 	// Initialize auth state with server-side validated data
 	onMount(() => {
-		console.log('[Layout] onMount called');
-		console.log('[Layout] Server data received:', { 
-			hasUser: !!data.user, 
-			hasSession: !!data.session, 
-			hasProfile: !!data.profile 
-		});
+		// console.log('[Layout] onMount called');
+		// console.log('[Layout] Server data received:', { 
+		// 	hasUser: !!data.user, 
+		// 	hasSession: !!data.session, 
+		// 	hasProfile: !!data.profile 
+		// });
 		
 		// Initialize the auth store with validated server data
 		authStore.set({
@@ -24,11 +24,11 @@
 			error: null
 		});
 
-		console.log('[Layout] Auth store initialized');
+		// console.log('[Layout] Auth store initialized');
 		
 		// Initialize auth state change listener
 		authStore.init();
-		console.log('[Layout] Auth listener initialized');
+		// console.log('[Layout] Auth listener initialized');
 	});
 </script>
 

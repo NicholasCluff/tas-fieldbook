@@ -31,13 +31,19 @@
 		Eye,
 		EyeOff,
 		Grid3x3,
-		Maximize2
+		Maximize2,
+		Check,
+		X,
+		Star,
+		Calendar
 	} from 'lucide-svelte'
 	
 	// Import services
 	import { surveyPlansService } from '$lib/services/surveyPlans.service.js'
 	import { planTagsService } from '$lib/services/planTags.service.js'
 	import PdfAnnotationViewer from '$lib/components/pdf/PdfAnnotationViewer.svelte'
+	import PlanRelationshipModal from '$lib/components/plans/PlanRelationshipModal.svelte'
+	import RelationshipBreadcrumbs from '$lib/components/plans/RelationshipBreadcrumbs.svelte'
 	import type { SurveyPlanWithDetails } from '$lib/types/database.js'
 	import type { PdfAnnotation, AnnotationEvent } from '$lib/types/pdf-annotations.js'
 
@@ -57,6 +63,8 @@
 	let showTagModal = false
 	let showRelationshipModal = false
 	let isFullscreen = false
+	let isEditingTitle = false
+	let editedTitle = ''
 
 	// Available tags (mock data)
 	let availableTags = [
@@ -86,16 +94,16 @@
 			
 			if (result.success) {
 				plan = result.data
-				console.log('Loaded plan data:', plan)
+				// console.log('Loaded plan data:', plan)
 				
 				// Get PDF URL for viewing
 				if (plan.file_path && !plan.file_path.includes('undefined')) {
-					console.log('Loading PDF for file path:', plan.file_path)
+					// console.log('Loading PDF for file path:', plan.file_path)
 					const urlResult = await surveyPlansService.getDownloadUrl(plan.file_path)
-					console.log('PDF URL result:', urlResult)
+					// console.log('PDF URL result:', urlResult)
 					if (urlResult.success && urlResult.data) {
 						pdfUrl = urlResult.data
-						console.log('PDF URL set:', pdfUrl)
+						// console.log('PDF URL set:', pdfUrl)
 					} else {
 						console.error('Failed to get PDF URL:', urlResult.error)
 					}
@@ -104,11 +112,11 @@
 					
 					// Try to get PDF from the source document instead
 					if (plan.search_document && plan.search_document.file_path && !plan.search_document.file_path.includes('undefined')) {
-						console.log('Falling back to source document PDF:', plan.search_document.file_path)
+						// console.log('Falling back to source document PDF:', plan.search_document.file_path)
 						const urlResult = await surveyPlansService.getDownloadUrl(plan.search_document.file_path)
 						if (urlResult.success && urlResult.data) {
 							pdfUrl = urlResult.data
-							console.log('Using source document PDF:', pdfUrl)
+							// console.log('Using source document PDF:', pdfUrl)
 						}
 					}
 				}
@@ -159,7 +167,7 @@
 	}
 
 	function goBack() {
-		goto(`/projects/${projectId}/search`)
+		goto(`/projects/${projectId}/search?tab=plans`)
 	}
 
 	function toggleFullscreen() {
@@ -169,22 +177,22 @@
 
 	// Annotation event handlers
 	function handleAnnotationCreated(event: CustomEvent<AnnotationEvent>) {
-		console.log('Annotation created:', event.detail)
+		// console.log('Annotation created:', event.detail)
 		// In real implementation, save to Supabase
 	}
 
 	function handleAnnotationUpdated(event: CustomEvent<AnnotationEvent>) {
-		console.log('Annotation updated:', event.detail)
+		// console.log('Annotation updated:', event.detail)
 		// In real implementation, update in Supabase
 	}
 
 	function handleAnnotationDeleted(event: CustomEvent<AnnotationEvent>) {
-		console.log('Annotation deleted:', event.detail)
+		// console.log('Annotation deleted:', event.detail)
 		// In real implementation, delete from Supabase
 	}
 
 	function handleAnnotationsLoaded(event: CustomEvent<PdfAnnotation[]>) {
-		console.log('Annotations loaded:', event.detail)
+		// console.log('Annotations loaded:', event.detail)
 		annotations = event.detail
 	}
 
@@ -196,7 +204,67 @@
 		showRelationshipModal = true
 	}
 
-	function formatDate(dateString) {
+	function handleRelationshipChanged() {
+		// Reload plan data to get updated relationship count
+		loadPlanData()
+	}
+
+	function handleNavigateToPlan(event: CustomEvent<{ planId: string; planTitle?: string; planReferenceNumber: string }>) {
+		const { planId: targetPlanId } = event.detail
+		// Navigate to the target plan
+		goto(`/projects/${projectId}/search/plans/${targetPlanId}`)
+	}
+
+	function handleBreadcrumbNavigate(targetPlanId: string) {
+		// Navigate to the target plan
+		goto(`/projects/${projectId}/search/plans/${targetPlanId}`)
+	}
+
+	function startEditingTitle() {
+		editedTitle = plan?.title || plan?.reference_number || ''
+		isEditingTitle = true
+	}
+
+	function cancelEditingTitle() {
+		isEditingTitle = false
+		editedTitle = ''
+	}
+
+	async function saveTitle() {
+		if (!plan || !editedTitle.trim()) {
+			cancelEditingTitle()
+			return
+		}
+
+		try {
+			const result = await surveyPlansService.updatePlan(planId, {
+				title: editedTitle.trim()
+			})
+
+			if (result.success) {
+				// Update local plan data
+				plan = { ...plan, title: editedTitle.trim() }
+				isEditingTitle = false
+				editedTitle = ''
+			} else {
+				error = result.error || 'Failed to update plan title'
+			}
+		} catch (err) {
+			error = err instanceof Error ? err.message : 'Failed to update plan title'
+		}
+	}
+
+	function handleTitleKeydown(event: KeyboardEvent) {
+		if (event.key === 'Enter') {
+			event.preventDefault()
+			saveTitle()
+		} else if (event.key === 'Escape') {
+			event.preventDefault()
+			cancelEditingTitle()
+		}
+	}
+
+	function formatDate(dateString: string) {
 		return new Date(dateString).toLocaleDateString('en-AU', {
 			year: 'numeric',
 			month: 'short',
@@ -224,7 +292,7 @@
 			<h2 class="text-xl font-semibold text-gray-900 mb-2">Plan not found</h2>
 			<p class="text-gray-600 mb-4">The requested plan could not be found.</p>
 			<button 
-				on:click={goBack}
+				onclick={goBack}
 				class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
 			>
 				Back to Search
@@ -238,13 +306,49 @@
 		<div class="flex items-center justify-between">
 			<div class="flex items-center space-x-4">
 				<button 
-					on:click={goBack}
+					onclick={goBack}
 					class="p-2 text-gray-400 hover:text-gray-600 rounded-md hover:bg-gray-100"
 				>
 					<ArrowLeft size={20} />
 				</button>
 				<div>
-					<h1 class="text-xl font-bold text-gray-900">{plan.title || plan.reference_number}</h1>
+					{#if isEditingTitle}
+						<div class="flex items-center space-x-2">
+							<input
+								type="text"
+								bind:value={editedTitle}
+								onkeydown={handleTitleKeydown}
+								class="text-xl font-bold text-gray-900 bg-white border border-gray-300 rounded px-2 py-1 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+								placeholder="Enter plan title..."
+								autofocus
+							/>
+							<button
+								onclick={saveTitle}
+								class="p-1 text-green-600 hover:text-green-700 rounded hover:bg-green-50"
+								title="Save title"
+							>
+								<Check size={16} />
+							</button>
+							<button
+								onclick={cancelEditingTitle}
+								class="p-1 text-red-600 hover:text-red-700 rounded hover:bg-red-50"
+								title="Cancel"
+							>
+								<X size={16} />
+							</button>
+						</div>
+					{:else}
+						<div class="flex items-center space-x-2 group">
+							<h1 class="text-xl font-bold text-gray-900">{plan.title || plan.reference_number}</h1>
+							<button
+								onclick={startEditingTitle}
+								class="p-1 text-gray-400 hover:text-gray-600 rounded hover:bg-gray-100 opacity-0 group-hover:opacity-100 transition-opacity"
+								title="Edit title"
+							>
+								<Edit3 size={16} />
+							</button>
+						</div>
+					{/if}
 					<div class="flex items-center space-x-4 text-sm text-gray-500">
 						<span>{plan.reference_number}</span>
 						<span>•</span>
@@ -269,14 +373,14 @@
 			
 			<div class="flex items-center space-x-2">
 				<button 
-					on:click={handleTagManagement}
+					onclick={handleTagManagement}
 					class="p-2 text-gray-400 hover:text-gray-600 rounded-md hover:bg-gray-100"
 					title="Manage tags"
 				>
 					<Tag size={18} />
 				</button>
 				<button 
-					on:click={handleRelationshipManagement}
+					onclick={handleRelationshipManagement}
 					class="p-2 text-gray-400 hover:text-gray-600 rounded-md hover:bg-gray-100"
 					title="Manage relationships"
 				>
@@ -289,14 +393,14 @@
 					<Share2 size={18} />
 				</button>
 				<button 
-					on:click={handleDownload}
+					onclick={handleDownload}
 					class="p-2 text-gray-400 hover:text-gray-600 rounded-md hover:bg-gray-100"
 					title="Download plan"
 				>
 					<Download size={18} />
 				</button>
 				<button 
-					on:click={toggleFullscreen}
+					onclick={toggleFullscreen}
 					class="p-2 text-gray-400 hover:text-gray-600 rounded-md hover:bg-gray-100"
 					title="Fullscreen"
 				>
@@ -306,12 +410,26 @@
 		</div>
 	</div>
 
+	<!-- Relationship Breadcrumbs -->
+	{#if plan}
+		<div class="px-6 py-3 bg-white border-b border-gray-100">
+			<RelationshipBreadcrumbs
+				planId={plan.id}
+				{projectId}
+				currentPlanTitle={plan.title}
+				currentPlanReferenceNumber={plan.reference_number}
+				onNavigate={handleBreadcrumbNavigate}
+			/>
+		</div>
+	{/if}
+
 	<!-- PDF Annotation Viewer -->
 	<div class="flex-1 overflow-hidden">
 		{#if pdfUrl}
 			<PdfAnnotationViewer
 				src={pdfUrl}
-				projectId={projectId}
+				{projectId}
+				{planId}
 				width={isFullscreen && browser ? window.innerWidth : 1200}
 				height={isFullscreen && browser ? window.innerHeight - 80 : 800}
 				{annotations}
@@ -357,7 +475,7 @@
 									<div class="text-sm"><strong>Created:</strong> {formatDate(plan.created_at)}</div>
 									{#if plan.file_path && plan.file_path.includes('undefined')}
 										<button 
-											on:click={fixFilePaths}
+											onclick={fixFilePaths}
 											class="mt-3 px-3 py-2 bg-yellow-600 text-white text-sm rounded-md hover:bg-yellow-700"
 										>
 											Fix File Paths
@@ -410,7 +528,7 @@
 				
 				<div class="flex justify-end space-x-3 mt-6">
 					<button 
-						on:click={() => showTagModal = false}
+						onclick={() => showTagModal = false}
 						class="px-4 py-2 text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200"
 					>
 						Cancel
@@ -426,57 +544,16 @@
 	{/if}
 
 	<!-- Relationship Management Modal -->
-	{#if showRelationshipModal}
-		<div class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-			<div class="bg-white rounded-lg p-6 max-w-2xl w-full mx-4">
-				<h3 class="text-lg font-semibold text-gray-900 mb-4">Plan Relationships</h3>
-				
-				<div class="space-y-4">
-					<div>
-						<h4 class="font-medium text-gray-900 mb-2">Related Plans</h4>
-						<div class="border border-gray-200 rounded-lg p-4 bg-gray-50">
-							<p class="text-sm text-gray-600">No relationships defined yet.</p>
-						</div>
-					</div>
-					
-					<div>
-						<h4 class="font-medium text-gray-900 mb-2">Add Relationship</h4>
-						<div class="grid grid-cols-2 gap-4">
-							<div>
-								<label class="block text-sm font-medium text-gray-700 mb-1">Relationship Type</label>
-								<select class="w-full px-3 py-2 border border-gray-300 rounded-md">
-									<option>Related to</option>
-									<option>Parent of</option>
-									<option>Child of</option>
-									<option>Supersedes</option>
-									<option>Superseded by</option>
-								</select>
-							</div>
-							<div>
-								<label class="block text-sm font-medium text-gray-700 mb-1">Target Plan</label>
-								<select class="w-full px-3 py-2 border border-gray-300 rounded-md">
-									<option>Select plan...</option>
-									<option>432367-2 - Plan of Survey - Lot 2</option>
-									<option>H123456 - Historical Cadastral Plan</option>
-								</select>
-							</div>
-						</div>
-						<button class="mt-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">
-							Add Relationship
-						</button>
-					</div>
-				</div>
-				
-				<div class="flex justify-end space-x-3 mt-6">
-					<button 
-						on:click={() => showRelationshipModal = false}
-						class="px-4 py-2 text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200"
-					>
-						Close
-					</button>
-				</div>
-			</div>
-		</div>
+	{#if showRelationshipModal && plan}
+		<PlanRelationshipModal
+			planId={plan.id}
+			{projectId}
+			planTitle={plan.title || undefined}
+			planReferenceNumber={plan.reference_number}
+			on:close={() => showRelationshipModal = false}
+			on:relationship-changed={handleRelationshipChanged}
+			on:navigate-to-plan={handleNavigateToPlan}
+		/>
 	{/if}
 </div>
 {/if}

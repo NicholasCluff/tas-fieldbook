@@ -7,6 +7,7 @@
 	import LoadingSpinner from '$lib/components/common/LoadingSpinner.svelte'
 	import ErrorMessage from '$lib/components/common/ErrorMessage.svelte'
 	import DocumentUpload from '$lib/components/search/DocumentUpload.svelte'
+	import PlansHierarchyView from '$lib/components/plans/PlansHierarchyView.svelte'
 	import { 
 		Upload, 
 		FileText, 
@@ -22,7 +23,11 @@
 		Clock,
 		AlertCircle,
 		Plus,
-		RefreshCw
+		RefreshCw,
+		Link,
+		GitBranch,
+		Star,
+		Calendar
 	} from 'lucide-svelte'
 	
 	// Import services
@@ -41,8 +46,9 @@
 	let loading = true
 	let error = ''
 
-	let currentView = 'documents' // 'documents' | 'plans'
-	let viewMode = 'grid' // 'grid' | 'list'
+	// Set initial view based on URL parameter
+	let currentView = $page.url.searchParams.get('tab') === 'plans' ? 'plans' : 'documents' // 'documents' | 'plans'
+	let viewMode = 'grid' // 'grid' | 'list' | 'hierarchy'
 	let searchQuery = ''
 	let selectedTags: string[] = []
 	let showUploadModal = false
@@ -243,6 +249,44 @@
 	async function refreshData() {
 		await loadData()
 	}
+
+	async function toggleStar(plan: SurveyPlanWithDetails, event: Event) {
+		event.stopPropagation() // Prevent plan navigation
+		
+		try {
+			const result = await surveyPlansService.toggleStarPlan(plan.id)
+			if (result.success) {
+				// Update local state
+				const updatedPlans = surveyPlans.map(p => 
+					p.id === plan.id ? { ...p, is_starred: !p.is_starred } : p
+				)
+				surveyPlans = updatedPlans
+			} else {
+				error = result.error || 'Failed to update star status'
+			}
+		} catch (err) {
+			error = err instanceof Error ? err.message : 'Failed to update star status'
+		}
+	}
+
+	async function updatePlanYear(plan: SurveyPlanWithDetails, year: number | null, event: Event) {
+		event.stopPropagation() // Prevent plan navigation
+		
+		try {
+			const result = await surveyPlansService.updatePlanYear(plan.id, year)
+			if (result.success) {
+				// Update local state
+				const updatedPlans = surveyPlans.map(p => 
+					p.id === plan.id ? { ...p, plan_year: year } : p
+				)
+				surveyPlans = updatedPlans
+			} else {
+				error = result.error || 'Failed to update plan year'
+			}
+		} catch (err) {
+			error = err instanceof Error ? err.message : 'Failed to update plan year'
+		}
+	}
 </script>
 
 <svelte:head>
@@ -294,14 +338,20 @@
 				<div class="flex items-center space-x-4">
 					<div class="flex bg-gray-100 rounded-lg p-1">
 						<button 
-							on:click={() => currentView = 'documents'}
+							on:click={() => { 
+								currentView = 'documents'
+								goto(`/projects/${projectId}/search?tab=documents`, { replaceState: true })
+							}}
 							class="px-4 py-2 rounded-md text-sm font-medium transition-colors {currentView === 'documents' ? 'bg-white text-gray-900 shadow' : 'text-gray-600 hover:text-gray-900'}"
 						>
 							<FileText size={16} class="mr-2 inline" />
 							Documents ({searchDocuments.length})
 						</button>
 						<button 
-							on:click={() => currentView = 'plans'}
+							on:click={() => { 
+								currentView = 'plans'
+								goto(`/projects/${projectId}/search?tab=plans`, { replaceState: true })
+							}}
 							class="px-4 py-2 rounded-md text-sm font-medium transition-colors {currentView === 'plans' ? 'bg-white text-gray-900 shadow' : 'text-gray-600 hover:text-gray-900'}"
 						>
 							<Grid3x3 size={16} class="mr-2 inline" />
@@ -338,6 +388,13 @@
 								title="List view"
 							>
 								<List size={16} class="text-gray-600" />
+							</button>
+							<button 
+								on:click={() => viewMode = 'hierarchy'}
+								class="p-2 rounded-md {viewMode === 'hierarchy' ? 'bg-white shadow' : 'hover:bg-gray-200'}"
+								title="Hierarchy view"
+							>
+								<GitBranch size={16} class="text-gray-600" />
 							</button>
 						</div>
 
@@ -457,12 +514,40 @@
 								 on:keydown={(e) => e.key === 'Enter' && handlePlanView(plan.id)}>
 								<div class="flex items-start justify-between mb-3">
 									<div class="flex-1">
-										<h3 class="font-medium text-gray-900 text-sm mb-1">{plan.title || 'Untitled Plan'}</h3>
+										<div class="flex items-center space-x-2 mb-1">
+											<h3 class="font-medium text-gray-900 text-sm">{plan.title || 'Untitled Plan'}</h3>
+											{#if plan.is_starred}
+												<Star size={14} class="text-yellow-500 fill-current" />
+											{/if}
+										</div>
 										<p class="text-xs text-gray-500 mb-2">{plan.reference_number}</p>
+										<div class="flex items-center space-x-2 text-xs">
+											<Calendar size={12} class="text-gray-400" />
+											<input
+												type="number"
+												placeholder="Year"
+												value={plan.plan_year || ''}
+												on:input={(e) => {
+													const year = e.target.value ? parseInt(e.target.value) : null
+													updatePlanYear(plan, year, e)
+												}}
+												on:click={(e) => e.stopPropagation()}
+												class="w-16 px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-transparent"
+											/>
+										</div>
 									</div>
-									<button class="p-1 text-gray-400 hover:text-gray-600">
-										<MoreVertical size={16} />
-									</button>
+									<div class="flex items-center space-x-1">
+										<button 
+											on:click={(e) => toggleStar(plan, e)}
+											class="p-1 rounded hover:bg-gray-100 {plan.is_starred ? 'text-yellow-500' : 'text-gray-400 hover:text-yellow-500'}"
+											title={plan.is_starred ? 'Unstar plan' : 'Star plan'}
+										>
+											<Star size={16} class={plan.is_starred ? 'fill-current' : ''} />
+										</button>
+										<button class="p-1 text-gray-400 hover:text-gray-600 rounded hover:bg-gray-100">
+											<MoreVertical size={16} />
+										</button>
+									</div>
 								</div>
 								
 								<!-- Plan Preview Placeholder -->
@@ -497,8 +582,8 @@
 								<div class="flex items-center justify-between text-xs text-gray-500">
 									<span>{formatDate(plan.created_at)}</span>
 									{#if plan.relationships_count && plan.relationships_count > 0}
-										<span class="flex items-center">
-											<span class="mr-1">🔗</span>
+										<span class="flex items-center text-blue-600">
+											<Link size={12} class="mr-1" />
 											{plan.relationships_count}
 										</span>
 									{/if}
@@ -506,6 +591,14 @@
 							</div>
 						{/each}
 					</div>
+				</div>
+			{:else if viewMode === 'hierarchy'}
+				<div class="p-6">
+					<PlansHierarchyView 
+						plans={filteredPlans}
+						{projectId}
+						onPlanView={handlePlanView}
+					/>
 				</div>
 			{:else}
 				<div class="divide-y divide-gray-200">
@@ -526,15 +619,27 @@
 										{/if}
 									</div>
 									<div class="flex-1 min-w-0">
-										<h3 class="text-sm font-medium text-gray-900">{plan.title || 'Untitled Plan'}</h3>
+										<div class="flex items-center space-x-2">
+											<h3 class="text-sm font-medium text-gray-900">{plan.title || 'Untitled Plan'}</h3>
+											{#if plan.is_starred}
+												<Star size={14} class="text-yellow-500 fill-current" />
+											{/if}
+										</div>
 										<div class="flex items-center space-x-4 mt-1 text-sm text-gray-500">
 											<span>{plan.reference_number}</span>
 											<span>•</span>
 											<span>{formatDate(plan.created_at)}</span>
-											{#if plan.relationships_count && plan.relationships_count > 0}
+											{#if plan.plan_year}
 												<span>•</span>
 												<span class="flex items-center">
-													<span class="mr-1">🔗</span>
+													<Calendar size={12} class="mr-1" />
+													{plan.plan_year}
+												</span>
+											{/if}
+											{#if plan.relationships_count && plan.relationships_count > 0}
+												<span>•</span>
+												<span class="flex items-center text-blue-600">
+													<Link size={12} class="mr-1" />
 													{plan.relationships_count} linked
 												</span>
 											{/if}
@@ -542,26 +647,54 @@
 									</div>
 								</div>
 								<div class="flex items-center space-x-4">
-									<div class="flex flex-wrap gap-1">
-										{#if plan.tags && plan.tags.length > 0}
-											{#each plan.tags.slice(0, 2) as tag}
-												<span 
-													class="inline-block text-xs px-2 py-1 rounded"
-													style="background-color: {tag.color}20; color: {tag.color};"
-												>
-													{tag.name}
-												</span>
-											{/each}
-											{#if plan.tags.length > 2}
-												<span class="text-xs text-gray-500">+{plan.tags.length - 2}</span>
+									<div class="flex items-center space-x-3">
+										<div class="flex flex-wrap gap-1">
+											{#if plan.tags && plan.tags.length > 0}
+												{#each plan.tags.slice(0, 2) as tag}
+													<span 
+														class="inline-block text-xs px-2 py-1 rounded"
+														style="background-color: {tag.color}20; color: {tag.color};"
+													>
+														{tag.name}
+													</span>
+												{/each}
+												{#if plan.tags.length > 2}
+													<span class="text-xs text-gray-500">+{plan.tags.length - 2}</span>
+												{/if}
+											{:else}
+												<span class="text-xs text-gray-400">No tags</span>
 											{/if}
-										{:else}
-											<span class="text-xs text-gray-400">No tags</span>
-										{/if}
+										</div>
+										
+										<!-- Year input -->
+										<div class="flex items-center space-x-1" on:click={(e) => e.stopPropagation()}>
+											<Calendar size={14} class="text-gray-400" />
+											<input
+												type="number"
+												placeholder="Year"
+												value={plan.plan_year || ''}
+												on:input={(e) => {
+													const year = e.target.value ? parseInt(e.target.value) : null
+													updatePlanYear(plan, year, e)
+												}}
+												class="w-20 px-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-transparent"
+											/>
+										</div>
+										
+										<!-- Actions -->
+										<div class="flex items-center space-x-1">
+											<button 
+												on:click={(e) => toggleStar(plan, e)}
+												class="p-1 rounded hover:bg-gray-100 {plan.is_starred ? 'text-yellow-500' : 'text-gray-400 hover:text-yellow-500'}"
+												title={plan.is_starred ? 'Unstar plan' : 'Star plan'}
+											>
+												<Star size={16} class={plan.is_starred ? 'fill-current' : ''} />
+											</button>
+											<button class="p-1 text-gray-400 hover:text-gray-600 rounded hover:bg-gray-100">
+												<MoreVertical size={16} />
+											</button>
+										</div>
 									</div>
-									<button class="p-2 text-gray-400 hover:text-gray-600">
-										<MoreVertical size={16} />
-									</button>
 								</div>
 							</div>
 						</div>

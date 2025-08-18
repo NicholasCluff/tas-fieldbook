@@ -37,10 +37,22 @@ class SurveyPlansService {
         query = query.in('status', filters.status)
       }
 
-      // Apply sorting
+      if (filters?.starred_only) {
+        query = query.eq('is_starred', true)
+      }
+
+      // Apply sorting with special handling for starred plans
       const sortBy = filters?.sort_by || 'created_at'
       const sortOrder = filters?.sort_order || 'desc'
-      query = query.order(sortBy, { ascending: sortOrder === 'asc' })
+      
+      // Always prioritize starred plans first, then apply secondary sort
+      if (sortBy === 'is_starred') {
+        query = query.order('is_starred', { ascending: false })
+        query = query.order('created_at', { ascending: sortOrder === 'asc' })
+      } else {
+        query = query.order('is_starred', { ascending: false })
+        query = query.order(sortBy, { ascending: sortOrder === 'asc' })
+      }
 
       const { data, error } = await query
 
@@ -48,12 +60,15 @@ class SurveyPlansService {
         return { success: false, error: error.message }
       }
 
+      // Get relationship counts for all plans
+      const relationshipCounts = await this.getRelationshipCounts(projectId)
+
       // Process the data to match our expected format
       const plans: SurveyPlanWithDetails[] = (data || []).map(plan => ({
         ...plan,
         tags: Array.isArray(plan.tags) ? plan.tags : [],
         annotations_count: plan.annotations_count?.[0]?.count || 0,
-        relationships_count: 0 // TODO: Add relationships count
+        relationships_count: relationshipCounts[plan.id] || 0
       }))
 
       // Filter by tags if specified
@@ -92,11 +107,14 @@ class SurveyPlansService {
         return { success: false, error: error.message }
       }
 
+      // Get relationship count for this specific plan
+      const relationshipCount = await this.getPlanRelationshipCount(planId)
+
       const plan: SurveyPlanWithDetails = {
         ...data,
         tags: Array.isArray(data.tags) ? data.tags : [],
         annotations_count: data.annotations_count?.[0]?.count || 0,
-        relationships_count: 0 // TODO: Load relationships separately if needed
+        relationships_count: relationshipCount
       }
 
       return { success: true, data: plan }
@@ -447,7 +465,7 @@ class SurveyPlansService {
         ...plan,
         tags: Array.isArray(plan.tags) ? plan.tags : [],
         annotations_count: 0,
-        relationships_count: 0
+        relationships_count: 0 // Note: This is a global search, relationship counts not critical here
       }))
 
       return { success: true, data: plans }
@@ -520,6 +538,83 @@ class SurveyPlansService {
   }
 
   /**
+   * Get relationship counts for all plans in a project
+   */
+  async getRelationshipCounts(projectId: string): Promise<Record<string, number>> {
+    try {
+      // First get all plans in the project
+      const { data: projectPlans, error: plansError } = await supabase
+        .from('survey_plans')
+        .select('id')
+        .eq('project_id', projectId)
+        .eq('status', 'active')
+
+      if (plansError) {
+        console.error('Error fetching project plans:', plansError)
+        return {}
+      }
+
+      if (!projectPlans || projectPlans.length === 0) {
+        return {}
+      }
+
+      const planIds = projectPlans.map(p => p.id)
+
+      // Get all relationships where either parent or child is in this project
+      const { data, error } = await supabase
+        .from('plan_relationships')
+        .select('parent_plan_id, child_plan_id')
+        .or(`parent_plan_id.in.(${planIds.join(',')}),child_plan_id.in.(${planIds.join(',')})`)
+
+      if (error) {
+        console.error('Error fetching relationship counts:', error)
+        return {}
+      }
+
+      const counts: Record<string, number> = {}
+
+      // Count relationships for each plan
+      data?.forEach(rel => {
+        // Count as parent (if parent is in this project)
+        if (planIds.includes(rel.parent_plan_id)) {
+          counts[rel.parent_plan_id] = (counts[rel.parent_plan_id] || 0) + 1
+        }
+        // Count as child (if child is in this project)
+        if (planIds.includes(rel.child_plan_id)) {
+          counts[rel.child_plan_id] = (counts[rel.child_plan_id] || 0) + 1
+        }
+      })
+
+      return counts
+    } catch (error) {
+      console.error('Error getting relationship counts:', error)
+      return {}
+    }
+  }
+
+  /**
+   * Get relationship count for a specific plan
+   */
+  async getPlanRelationshipCount(planId: string): Promise<number> {
+    try {
+      const { count, error } = await supabase
+        .from('plan_relationships')
+        .select('*', { count: 'exact' })
+        .or(`parent_plan_id.eq.${planId},child_plan_id.eq.${planId}`)
+
+      if (error) {
+        console.error('Error fetching plan relationship count:', error)
+        return 0
+      }
+
+      return count || 0
+    } catch (error) {
+      console.error('Error getting plan relationship count:', error)
+      return 0
+    }
+  }
+
+  /**
    * Get a signed URL for downloading a plan PDF
    */
   async getDownloadUrl(filePath: string): Promise<ServiceResult<string>> {
@@ -541,6 +636,108 @@ class SurveyPlansService {
       return { success: true, data: data.signedUrl }
     } catch (error) {
       console.error('[SurveyPlans] Unexpected error generating signed URL:', error)
+      return { 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Unknown error occurred' 
+      }
+    }
+  }
+
+  /**
+   * Toggle star status for a plan
+   */
+  async toggleStarPlan(planId: string): Promise<ServiceResult<SurveyPlan>> {
+    try {
+      // First get current star status
+      const { data: currentPlan, error: fetchError } = await supabase
+        .from('survey_plans')
+        .select('is_starred')
+        .eq('id', planId)
+        .single()
+
+      if (fetchError) {
+        return { success: false, error: fetchError.message }
+      }
+
+      const newStarStatus = !currentPlan.is_starred
+
+      const { data, error } = await supabase
+        .from('survey_plans')
+        .update({ is_starred: newStarStatus })
+        .eq('id', planId)
+        .select()
+        .single()
+
+      if (error) {
+        return { success: false, error: error.message }
+      }
+
+      return { success: true, data }
+    } catch (error) {
+      return { 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Unknown error occurred' 
+      }
+    }
+  }
+
+  /**
+   * Update plan year
+   */
+  async updatePlanYear(planId: string, year: number | null): Promise<ServiceResult<SurveyPlan>> {
+    try {
+      const { data, error } = await supabase
+        .from('survey_plans')
+        .update({ plan_year: year })
+        .eq('id', planId)
+        .select()
+        .single()
+
+      if (error) {
+        return { success: false, error: error.message }
+      }
+
+      return { success: true, data }
+    } catch (error) {
+      return { 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Unknown error occurred' 
+      }
+    }
+  }
+
+  /**
+   * Get starred plans for a project
+   */
+  async getStarredPlans(projectId: string): Promise<ServiceResult<SurveyPlanWithDetails[]>> {
+    try {
+      const { data, error } = await supabase
+        .from('survey_plans_with_tags')
+        .select('*')
+        .eq('project_id', projectId)
+        .eq('is_starred', true)
+        .eq('status', 'active')
+        .order('updated_at', { ascending: false })
+
+      if (error) {
+        return { success: false, error: error.message }
+      }
+
+      // Get relationship counts for each plan
+      const plansWithCounts = await Promise.all(
+        (data || []).map(async (plan) => {
+          const relationshipCount = await this.getRelationshipCount(plan.id)
+          return {
+            ...plan,
+            tags: Array.isArray(plan.tags) ? plan.tags : [],
+            annotations_count: plan.annotations_count?.[0]?.count || 0,
+            relationships_count: relationshipCount
+          } as SurveyPlanWithDetails
+        })
+      )
+
+      return { success: true, data: plansWithCounts }
+    } catch (error) {
       return { 
         success: false, 
         error: error instanceof Error ? error.message : 'Unknown error occurred' 
