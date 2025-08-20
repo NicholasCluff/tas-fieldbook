@@ -17,7 +17,7 @@
 	
 	const projectId = $derived($page.params.id)
 	
-	$: project = $projectsStore.currentProject
+	const project = $derived($projectsStore.currentProject)
 	
 	// Mock data - replace with actual service call
 	let photos: any[] = []
