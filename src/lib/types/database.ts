@@ -15,8 +15,9 @@ export interface Database {
           email: string
           first_name: string
           last_name: string
-          role: 'supervisor' | 'candidate'
+          role: 'supervisor' | 'candidate' | null
           phone: string | null
+          primary_organization_id: string | null
           created_at: string
           updated_at: string
         }
@@ -25,8 +26,9 @@ export interface Database {
           email: string
           first_name: string
           last_name: string
-          role: 'supervisor' | 'candidate'
+          role?: 'supervisor' | 'candidate' | null
           phone?: string | null
+          primary_organization_id?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -35,34 +37,176 @@ export interface Database {
           email?: string
           first_name?: string
           last_name?: string
-          role?: 'supervisor' | 'candidate'
+          role?: 'supervisor' | 'candidate' | null
           phone?: string | null
+          primary_organization_id?: string | null
           created_at?: string
           updated_at?: string
         }
       }
-      supervisor_candidates: {
+      organizations: {
         Row: {
           id: string
-          supervisor_id: string
-          candidate_id: string
-          status: 'active' | 'inactive'
+          name: string
+          description: string | null
+          website: string | null
+          address: string | null
+          phone: string | null
+          email: string | null
+          logo_url: string | null
+          settings: Json | null
+          created_by: string | null
           created_at: string
           updated_at: string
         }
         Insert: {
           id?: string
-          supervisor_id: string
-          candidate_id: string
-          status?: 'active' | 'inactive'
+          name: string
+          description?: string | null
+          website?: string | null
+          address?: string | null
+          phone?: string | null
+          email?: string | null
+          logo_url?: string | null
+          settings?: Json | null
+          created_by?: string | null
           created_at?: string
           updated_at?: string
         }
         Update: {
           id?: string
+          name?: string
+          description?: string | null
+          website?: string | null
+          address?: string | null
+          phone?: string | null
+          email?: string | null
+          logo_url?: string | null
+          settings?: Json | null
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+      }
+      organization_memberships: {
+        Row: {
+          id: string
+          organization_id: string
+          user_id: string
+          role: 'owner' | 'admin' | 'member'
+          status: 'active' | 'inactive' | 'suspended'
+          invited_by: string | null
+          joined_at: string
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          user_id: string
+          role?: 'owner' | 'admin' | 'member'
+          status?: 'active' | 'inactive' | 'suspended'
+          invited_by?: string | null
+          joined_at?: string
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          user_id?: string
+          role?: 'owner' | 'admin' | 'member'
+          status?: 'active' | 'inactive' | 'suspended'
+          invited_by?: string | null
+          joined_at?: string
+          created_at?: string
+          updated_at?: string
+        }
+      }
+      organization_invitations: {
+        Row: {
+          id: string
+          organization_id: string
+          inviter_id: string
+          invitee_email: string
+          invitee_id: string | null
+          role: 'admin' | 'member'
+          status: 'pending' | 'accepted' | 'declined' | 'cancelled' | 'expired'
+          message: string | null
+          expires_at: string
+          responded_at: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          inviter_id: string
+          invitee_email: string
+          invitee_id?: string | null
+          role?: 'admin' | 'member'
+          status?: 'pending' | 'accepted' | 'declined' | 'cancelled' | 'expired'
+          message?: string | null
+          expires_at?: string
+          responded_at?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          inviter_id?: string
+          invitee_email?: string
+          invitee_id?: string | null
+          role?: 'admin' | 'member'
+          status?: 'pending' | 'accepted' | 'declined' | 'cancelled' | 'expired'
+          message?: string | null
+          expires_at?: string
+          responded_at?: string | null
+          created_at?: string
+        }
+      }
+      project_supervisors: {
+        Row: {
+          id: string
+          project_id: string
+          supervisor_id: string
+          supervised_user_id: string
+          status: 'active' | 'inactive' | 'completed'
+          supervision_type: 'full' | 'review_only' | 'advisory'
+          notes: string | null
+          requested_by: string | null
+          approved_by: string | null
+          started_at: string
+          ended_at: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          project_id: string
+          supervisor_id: string
+          supervised_user_id: string
+          status?: 'active' | 'inactive' | 'completed'
+          supervision_type?: 'full' | 'review_only' | 'advisory'
+          notes?: string | null
+          requested_by?: string | null
+          approved_by?: string | null
+          started_at?: string
+          ended_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          project_id?: string
           supervisor_id?: string
-          candidate_id?: string
-          status?: 'active' | 'inactive'
+          supervised_user_id?: string
+          status?: 'active' | 'inactive' | 'completed'
+          supervision_type?: 'full' | 'review_only' | 'advisory'
+          notes?: string | null
+          requested_by?: string | null
+          approved_by?: string | null
+          started_at?: string
+          ended_at?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -75,6 +219,9 @@ export interface Database {
           location: string
           owner_id: string
           supervisor_id: string | null
+          organization_id: string | null
+          visibility: 'private' | 'organization' | 'public'
+          allow_external_supervision: boolean
           phase: 'setup' | 'fieldwork' | 'review'
           status: 'active' | 'completed' | 'archived'
           supervision_required: boolean
@@ -91,6 +238,9 @@ export interface Database {
           location: string
           owner_id: string
           supervisor_id?: string | null
+          organization_id?: string | null
+          visibility?: 'private' | 'organization' | 'public'
+          allow_external_supervision?: boolean
           phase?: 'setup' | 'fieldwork' | 'review'
           status?: 'active' | 'completed' | 'archived'
           supervision_required?: boolean
@@ -107,6 +257,9 @@ export interface Database {
           location?: string
           owner_id?: string
           supervisor_id?: string | null
+          organization_id?: string | null
+          visibility?: 'private' | 'organization' | 'public'
+          allow_external_supervision?: boolean
           phase?: 'setup' | 'fieldwork' | 'review'
           status?: 'active' | 'completed' | 'archived'
           supervision_required?: boolean
@@ -263,6 +416,7 @@ export interface Database {
           invitee_id: string
           role: 'supervisor' | 'collaborator'
           status: 'pending' | 'accepted' | 'declined' | 'cancelled'
+          organization_context_id: string | null
           message: string | null
           responded_at: string | null
           created_at: string
@@ -274,6 +428,7 @@ export interface Database {
           invitee_id: string
           role: 'supervisor' | 'collaborator'
           status?: 'pending' | 'accepted' | 'declined' | 'cancelled'
+          organization_context_id?: string | null
           message?: string | null
           responded_at?: string | null
           created_at?: string
@@ -285,6 +440,7 @@ export interface Database {
           invitee_id?: string
           role?: 'supervisor' | 'collaborator'
           status?: 'pending' | 'accepted' | 'declined' | 'cancelled'
+          organization_context_id?: string | null
           message?: string | null
           responded_at?: string | null
           created_at?: string
@@ -299,6 +455,9 @@ export interface Database {
           can_edit: boolean
           can_approve: boolean
           can_invite: boolean
+          granted_by: string | null
+          granted_at: string
+          expires_at: string | null
           created_at: string
           updated_at: string
         }
@@ -310,6 +469,9 @@ export interface Database {
           can_edit?: boolean
           can_approve?: boolean
           can_invite?: boolean
+          granted_by?: string | null
+          granted_at?: string
+          expires_at?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -321,6 +483,9 @@ export interface Database {
           can_edit?: boolean
           can_approve?: boolean
           can_invite?: boolean
+          granted_by?: string | null
+          granted_at?: string
+          expires_at?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -340,6 +505,13 @@ export interface Database {
           sort_order: number
           plan_year: number | null
           is_starred: boolean
+          surveyor_name: string | null
+          title_references: string[] | null
+          survey_datum: string | null
+          bearing_swing_difference: number | null
+          remarks: Json | null
+          lot_numbers: string[] | null
+          deposited_plan_numbers: string[] | null
           created_by: string | null
           created_at: string
           updated_at: string
@@ -358,6 +530,13 @@ export interface Database {
           sort_order?: number
           plan_year?: number | null
           is_starred?: boolean
+          surveyor_name?: string | null
+          title_references?: string[] | null
+          survey_datum?: string | null
+          bearing_swing_difference?: number | null
+          remarks?: Json | null
+          lot_numbers?: string[] | null
+          deposited_plan_numbers?: string[] | null
           created_by?: string | null
           created_at?: string
           updated_at?: string
@@ -376,6 +555,13 @@ export interface Database {
           sort_order?: number
           plan_year?: number | null
           is_starred?: boolean
+          surveyor_name?: string | null
+          title_references?: string[] | null
+          survey_datum?: string | null
+          bearing_swing_difference?: number | null
+          remarks?: Json | null
+          lot_numbers?: string[] | null
+          deposited_plan_numbers?: string[] | null
           created_by?: string | null
           created_at?: string
           updated_at?: string
@@ -514,6 +700,13 @@ export interface Database {
           sort_order: number
           plan_year: number | null
           is_starred: boolean
+          surveyor_name: string | null
+          title_references: string[] | null
+          survey_datum: string | null
+          bearing_swing_difference: number | null
+          remarks: Json | null
+          lot_numbers: string[] | null
+          deposited_plan_numbers: string[] | null
           created_by: string | null
           created_at: string
           updated_at: string
@@ -539,6 +732,12 @@ export type Photo = Database['public']['Tables']['photos']['Row']
 export type ProjectInvitation = Database['public']['Tables']['project_invitations']['Row']
 export type ProjectPermission = Database['public']['Tables']['project_permissions']['Row']
 
+// Organization types
+export type Organization = Database['public']['Tables']['organizations']['Row']
+export type OrganizationMembership = Database['public']['Tables']['organization_memberships']['Row']
+export type OrganizationInvitation = Database['public']['Tables']['organization_invitations']['Row']
+export type ProjectSupervisor = Database['public']['Tables']['project_supervisors']['Row']
+
 // Survey Search types
 export type SurveyPlan = Database['public']['Tables']['survey_plans']['Row']
 export type PlanTag = Database['public']['Tables']['plan_tags']['Row']
@@ -558,11 +757,23 @@ export type PlanTagAssignmentInsert = Database['public']['Tables']['plan_tag_ass
 export type PlanRelationshipInsert = Database['public']['Tables']['plan_relationships']['Insert']
 export type PlanAnnotationInsert = Database['public']['Tables']['plan_annotations']['Insert']
 
+// Organization Insert types
+export type OrganizationInsert = Database['public']['Tables']['organizations']['Insert']
+export type OrganizationMembershipInsert = Database['public']['Tables']['organization_memberships']['Insert']
+export type OrganizationInvitationInsert = Database['public']['Tables']['organization_invitations']['Insert']
+export type ProjectSupervisorInsert = Database['public']['Tables']['project_supervisors']['Insert']
+
 // Update types
 export type SurveyPlanUpdate = Database['public']['Tables']['survey_plans']['Update']
 export type PlanTagUpdate = Database['public']['Tables']['plan_tags']['Update']
 export type PlanAnnotationUpdate = Database['public']['Tables']['plan_annotations']['Update']
 export type PlanRelationshipUpdate = Database['public']['Tables']['plan_relationships']['Update']
+
+// Organization Update types
+export type OrganizationUpdate = Database['public']['Tables']['organizations']['Update']
+export type OrganizationMembershipUpdate = Database['public']['Tables']['organization_memberships']['Update']
+export type OrganizationInvitationUpdate = Database['public']['Tables']['organization_invitations']['Update']
+export type ProjectSupervisorUpdate = Database['public']['Tables']['project_supervisors']['Update']
 
 // Specialized types for client use
 export interface AnnotationStyle {
@@ -586,6 +797,12 @@ export interface PlanTagWithAssignment extends PlanTag {
   assigned_by?: string | null
 }
 
+export interface PlanRemark {
+  text: string
+  reference_number?: string
+  type?: 'general' | 'boundary' | 'easement' | 'restriction' | 'note'
+}
+
 export interface SurveyPlanWithDetails extends SurveyPlan {
   tags?: PlanTagWithAssignment[]
   annotations_count?: number
@@ -597,9 +814,13 @@ export interface PlanFilters {
   search?: string
   tags?: string[]
   status?: SurveyPlan['status'][]
-  sort_by?: 'created_at' | 'updated_at' | 'title' | 'reference_number' | 'plan_year' | 'is_starred'
+  sort_by?: 'created_at' | 'updated_at' | 'title' | 'reference_number' | 'plan_year' | 'is_starred' | 'surveyor_name' | 'survey_datum'
   sort_order?: 'asc' | 'desc'
   starred_only?: boolean
+  surveyor_name?: string
+  survey_datum?: string
+  year_range?: { from?: number; to?: number }
+  has_bearing_swing?: boolean
 }
 
 export interface DocumentProcessingResult {
@@ -618,4 +839,28 @@ export interface ServiceResult<T> {
   data?: T
   error?: string
   success: boolean
+}
+
+// Organization-specific interfaces
+export interface OrganizationWithMembership extends Organization {
+  membership?: OrganizationMembership
+  member_count?: number
+  project_count?: number
+}
+
+export interface ProfileWithOrganization extends Profile {
+  organization?: Organization
+  organization_membership?: OrganizationMembership
+}
+
+export interface ProjectWithOrganization extends Project {
+  organization?: Organization
+  supervisors?: ProjectSupervisor[]
+}
+
+export interface SupervisionRequest {
+  project_id: string
+  supervisor_id: string
+  supervision_type: 'full' | 'review_only' | 'advisory'
+  notes?: string
 }

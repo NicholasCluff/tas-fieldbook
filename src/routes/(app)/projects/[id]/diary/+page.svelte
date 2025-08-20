@@ -15,6 +15,7 @@
 		Plus,
 		TrendingUp
 	} from 'lucide-svelte'
+	import ProjectHeader from '$lib/components/projects/ProjectHeader.svelte'
 
 	const projectId = $page.params.id
 
@@ -103,15 +104,17 @@
 	<title>Diary Overview - {project?.title || 'Project'} - TasFieldbook</title>
 </svelte:head>
 
+<ProjectHeader 
+	{project} 
+	title="Field Diary" 
+	subtitle="Daily field activities and observations" 
+/>
+
 <div class="flex-1 overflow-y-auto">
-	<!-- Header -->
-	<div class="bg-white border-b border-gray-200 px-6 py-4">
-		<div class="flex items-center justify-between">
-			<div>
-				<h1 class="text-2xl font-bold text-gray-900">Field Diary</h1>
-				<p class="text-gray-600 mt-1">Daily field activities and observations</p>
-			</div>
-			{#if canEdit}
+	<div class="p-6 space-y-6">
+		<!-- Actions -->
+		{#if canEdit}
+			<div class="flex justify-end">
 				<a
 					href="/projects/{projectId}/diary/new"
 					class="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
@@ -119,11 +122,8 @@
 					<Plus size={16} class="mr-2" />
 					New Entry
 				</a>
-			{/if}
-		</div>
-	</div>
-
-	<div class="p-6 space-y-6">
+			</div>
+		{/if}
 		<!-- Stats Overview -->
 		<div class="grid grid-cols-1 md:grid-cols-4 gap-4">
 			<div class="bg-white p-4 rounded-lg border border-gray-200">

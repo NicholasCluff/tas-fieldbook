@@ -9,6 +9,7 @@
 	import MapControls from '$lib/components/map/MapControls.svelte'
 	import AnnotationTools from '$lib/components/map/AnnotationTools.svelte'
 	import LayerLegend from '$lib/components/map/LayerLegend.svelte'
+	import ProjectHeader from '$lib/components/projects/ProjectHeader.svelte'
 	import { 
 		Map as MapIcon, 
 		Layers, 
@@ -62,16 +63,14 @@
 	</div>
 {:else if project}
 	<div class="h-screen flex flex-col bg-gray-100">
-		<!-- Header -->
-		<div class="bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between">
-			<div class="flex items-center space-x-4">
-				<div class="flex items-center space-x-2">
-					<MapIcon class="w-6 h-6 text-purple-500" />
-					<h1 class="text-xl font-semibold text-gray-900">Interactive Map</h1>
-				</div>
-				<span class="text-sm text-gray-500">{project.title}</span>
-			</div>
-			
+		<ProjectHeader 
+			{project} 
+			title="Interactive Map" 
+			subtitle="View and annotate maps" 
+		/>
+		
+		<!-- Map Controls -->
+		<div class="bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-end">
 			<div class="flex items-center space-x-2">
 				<button
 					on:click={() => showControls = !showControls}

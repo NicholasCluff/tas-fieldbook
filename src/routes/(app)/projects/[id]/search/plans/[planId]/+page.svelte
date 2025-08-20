@@ -35,7 +35,10 @@
 		Check,
 		X,
 		Star,
-		Calendar
+		Calendar,
+		Database,
+		User,
+		Map
 	} from 'lucide-svelte'
 	
 	// Import services
@@ -44,6 +47,8 @@
 	import PdfAnnotationViewer from '$lib/components/pdf/PdfAnnotationViewer.svelte'
 	import PlanRelationshipModal from '$lib/components/plans/PlanRelationshipModal.svelte'
 	import RelationshipBreadcrumbs from '$lib/components/plans/RelationshipBreadcrumbs.svelte'
+	import PlanMetadataEditor from '$lib/components/plans/PlanMetadataEditor.svelte'
+	import ProjectHeader from '$lib/components/projects/ProjectHeader.svelte'
 	import type { SurveyPlanWithDetails } from '$lib/types/database.js'
 	import type { PdfAnnotation, AnnotationEvent } from '$lib/types/pdf-annotations.js'
 
@@ -62,6 +67,7 @@
 	// UI State
 	let showTagModal = false
 	let showRelationshipModal = false
+	let showMetadataEditor = false
 	let isFullscreen = false
 	let isEditingTitle = false
 	let editedTitle = ''
@@ -209,6 +215,16 @@
 		loadPlanData()
 	}
 
+	function handleMetadataEdit() {
+		showMetadataEditor = true
+	}
+
+	function handleMetadataSaved(event: CustomEvent<{ plan: SurveyPlanWithDetails }>) {
+		// Update the local plan data with the new metadata
+		plan = event.detail.plan
+		showMetadataEditor = false
+	}
+
 	function handleNavigateToPlan(event: CustomEvent<{ planId: string; planTitle?: string; planReferenceNumber: string }>) {
 		const { planId: targetPlanId } = event.detail
 		// Navigate to the target plan
@@ -271,11 +287,68 @@
 			day: 'numeric'
 		})
 	}
+
+	async function toggleStar() {
+		if (!plan) return
+		
+		try {
+			const result = await surveyPlansService.toggleStarPlan(plan.id)
+			if (result.success) {
+				// Update local plan data
+				plan = { ...plan, is_starred: !plan.is_starred }
+			} else {
+				error = result.error || 'Failed to update star status'
+			}
+		} catch (err) {
+			error = err instanceof Error ? err.message : 'Failed to update star status'
+		}
+	}
+
+	async function updatePlanYear(year: number | null) {
+		if (!plan) return
+		
+		try {
+			const result = await surveyPlansService.updatePlanYear(plan.id, year)
+			if (result.success) {
+				// Update local plan data
+				plan = { ...plan, plan_year: year }
+			} else {
+				error = result.error || 'Failed to update plan year'
+			}
+		} catch (err) {
+			error = err instanceof Error ? err.message : 'Failed to update plan year'
+		}
+	}
 </script>
 
 <svelte:head>
 	<title>{plan?.title || 'Plan'} - Search Analysis - TasFieldbook</title>
 </svelte:head>
+
+<!-- <div class="bg-white border-b border-gray-200 sticky top-0 z-10">
+	<div class="px-4 py-3 sm:px-6">
+		<div class="flex items-center justify-between">
+			<div class="flex items-center space-x-3 min-w-0 flex-1">
+				<button
+					onclick={() => goto(`/projects/${projectId}/search`)}
+					class="flex-shrink-0 p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-md transition-colors"
+					title="Back to search"
+				>
+					<ArrowLeft size={20} />
+				</button>
+				
+				<div class="min-w-0 flex-1">
+					<h1 class="text-lg font-semibold text-gray-900 truncate sm:text-xl">
+						{plan?.title || plan?.reference_number || 'Plan Details'}
+					</h1>
+					<p class="text-sm text-gray-600 truncate mt-1">
+						{plan?.reference_number ? `${plan.reference_number} • ` : ''}Survey Plan
+					</p>
+				</div>
+			</div>
+		</div>
+	</div>
+</div> -->
 
 {#if loading}
 	<div class="h-screen flex items-center justify-center">
@@ -353,6 +426,27 @@
 						<span>{plan.reference_number}</span>
 						<span>•</span>
 						<span>{formatDate(plan.created_at)}</span>
+						{#if plan.plan_year}
+							<span>•</span>
+							<span class="flex items-center">
+								<Calendar size={12} class="mr-1" />
+								{plan.plan_year}
+							</span>
+						{/if}
+						{#if plan.surveyor_name}
+							<span>•</span>
+							<span class="flex items-center">
+								<User size={12} class="mr-1" />
+								{plan.surveyor_name}
+							</span>
+						{/if}
+						{#if plan.survey_datum}
+							<span>•</span>
+							<span class="flex items-center">
+								<Map size={12} class="mr-1" />
+								{plan.survey_datum}
+							</span>
+						{/if}
 						{#if plan.page_numbers && plan.page_numbers.length > 0}
 							<span>•</span>
 							<span>{plan.page_numbers.length} pages</span>
@@ -372,6 +466,37 @@
 			</div>
 			
 			<div class="flex items-center space-x-2">
+				<!-- Year input -->
+				<div class="flex items-center space-x-1 border border-gray-300 rounded-md px-2 py-1">
+					<Calendar size={14} class="text-gray-400" />
+					<input
+						type="number"
+						placeholder="Year"
+						value={plan.plan_year || ''}
+						oninput={(e) => {
+							const year = e.target.value ? parseInt(e.target.value) : null
+							updatePlanYear(year)
+						}}
+						class="w-16 text-sm border-0 focus:ring-0 focus:outline-none"
+					/>
+				</div>
+				
+				<!-- Star button -->
+				<button 
+					onclick={toggleStar}
+					class="p-2 rounded-md hover:bg-gray-100 {plan.is_starred ? 'text-yellow-500' : 'text-gray-400 hover:text-yellow-500'}"
+					title={plan.is_starred ? 'Unstar plan' : 'Star plan'}
+				>
+					<Star size={18} class={plan.is_starred ? 'fill-current' : ''} />
+				</button>
+				
+				<button 
+					onclick={handleMetadataEdit}
+					class="p-2 text-gray-400 hover:text-gray-600 rounded-md hover:bg-gray-100"
+					title="Edit metadata"
+				>
+					<Database size={18} />
+				</button>
 				<button 
 					onclick={handleTagManagement}
 					class="p-2 text-gray-400 hover:text-gray-600 rounded-md hover:bg-gray-100"
@@ -553,6 +678,16 @@
 			on:close={() => showRelationshipModal = false}
 			on:relationship-changed={handleRelationshipChanged}
 			on:navigate-to-plan={handleNavigateToPlan}
+		/>
+	{/if}
+
+	<!-- Metadata Editor Modal -->
+	{#if plan}
+		<PlanMetadataEditor
+			{plan}
+			show={showMetadataEditor}
+			on:close={() => showMetadataEditor = false}
+			on:saved={handleMetadataSaved}
 		/>
 	{/if}
 </div>

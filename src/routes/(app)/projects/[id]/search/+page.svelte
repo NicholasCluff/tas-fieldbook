@@ -8,6 +8,7 @@
 	import ErrorMessage from '$lib/components/common/ErrorMessage.svelte'
 	import DocumentUpload from '$lib/components/search/DocumentUpload.svelte'
 	import PlansHierarchyView from '$lib/components/plans/PlansHierarchyView.svelte'
+	import ProjectHeader from '$lib/components/projects/ProjectHeader.svelte'
 	import { 
 		Upload, 
 		FileText, 
@@ -27,7 +28,12 @@
 		Link,
 		GitBranch,
 		Star,
-		Calendar
+		Calendar,
+		User,
+		Map,
+		Navigation,
+		MessageSquare,
+		Hash
 	} from 'lucide-svelte'
 	
 	// Import services
@@ -293,6 +299,12 @@
 	<title>Search Analysis - {project?.title || 'Project'} - TasFieldbook</title>
 </svelte:head>
 
+<ProjectHeader 
+	{project} 
+	title="Search Analysis" 
+	subtitle="Upload and manage survey search documents" 
+/>
+
 {#if loading}
 	<div class="flex items-center justify-center py-12">
 		<LoadingSpinner />
@@ -305,30 +317,24 @@
 			<ErrorMessage message={error} />
 		{/if}
 
-		<!-- Header -->
+		<!-- Actions -->
 		<div class="bg-white rounded-lg shadow">
-			<div class="px-6 py-4 border-b border-gray-200">
-				<div class="flex items-center justify-between">
-					<div>
-						<h1 class="text-2xl font-bold text-gray-900">Search Analysis</h1>
-						<p class="text-gray-600 mt-1">Upload and manage survey search documents</p>
-					</div>
-					<div class="flex items-center space-x-2">
-						<button 
-							on:click={refreshData}
-							class="inline-flex items-center px-3 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50"
-							title="Refresh data"
-						>
-							<RefreshCw size={16} />
-						</button>
-						<button 
-							on:click={handleUpload}
-							class="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
-						>
-							<Upload size={16} class="mr-2" />
-							Upload Document
-						</button>
-					</div>
+			<div class="px-6 py-4">
+				<div class="flex items-center justify-end space-x-2">
+					<button 
+						on:click={refreshData}
+						class="inline-flex items-center px-3 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50"
+						title="Refresh data"
+					>
+						<RefreshCw size={16} />
+					</button>
+					<button 
+						on:click={handleUpload}
+						class="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+					>
+						<Upload size={16} class="mr-2" />
+						Upload Document
+					</button>
 				</div>
 			</div>
 
@@ -521,20 +527,12 @@
 											{/if}
 										</div>
 										<p class="text-xs text-gray-500 mb-2">{plan.reference_number}</p>
-										<div class="flex items-center space-x-2 text-xs">
-											<Calendar size={12} class="text-gray-400" />
-											<input
-												type="number"
-												placeholder="Year"
-												value={plan.plan_year || ''}
-												on:input={(e) => {
-													const year = e.target.value ? parseInt(e.target.value) : null
-													updatePlanYear(plan, year, e)
-												}}
-												on:click={(e) => e.stopPropagation()}
-												class="w-16 px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-transparent"
-											/>
-										</div>
+										{#if plan.plan_year}
+											<div class="flex items-center space-x-2 text-xs text-gray-600">
+												<Calendar size={12} class="text-gray-400" />
+												<span>{plan.plan_year}</span>
+											</div>
+										{/if}
 									</div>
 									<div class="flex items-center space-x-1">
 										<button 
@@ -550,14 +548,68 @@
 									</div>
 								</div>
 								
-								<!-- Plan Preview Placeholder -->
-								<div class="bg-gray-100 rounded-md h-32 mb-3 flex items-center justify-center">
-									<FileText size={24} class="text-gray-400" />
+								<!-- Plan Metadata Preview -->
+								<div class="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-md h-32 p-3 mb-3 flex flex-col justify-between relative">
 									{#if plan.annotations_count && plan.annotations_count > 0}
-										<span class="absolute -mt-8 -mr-8 bg-blue-600 text-white text-xs px-2 py-1 rounded-full">
+										<span class="absolute top-2 right-2 bg-blue-600 text-white text-xs px-2 py-1 rounded-full">
 											{plan.annotations_count}
 										</span>
 									{/if}
+									
+									<!-- Top metadata -->
+									<div class="space-y-1 text-xs">
+										{#if plan.surveyor_name}
+											<div class="flex items-center space-x-1 text-gray-700">
+												<User size={12} class="text-gray-500 flex-shrink-0" />
+												<span class="truncate">{plan.surveyor_name}</span>
+											</div>
+										{/if}
+										
+										{#if plan.survey_datum}
+											<div class="flex items-center space-x-1 text-gray-700">
+												<Map size={12} class="text-gray-500 flex-shrink-0" />
+												<span class="truncate">{plan.survey_datum}</span>
+											</div>
+										{/if}
+										
+										{#if plan.bearing_swing_difference !== null && plan.bearing_swing_difference !== undefined}
+											<div class="flex items-center space-x-1 text-gray-700">
+												<Navigation size={12} class="text-gray-500 flex-shrink-0" />
+												<span class="truncate">{plan.bearing_swing_difference}° to MGA</span>
+											</div>
+										{/if}
+									</div>
+									
+									<!-- Bottom metadata -->
+									<div class="text-xs">
+										{#if plan.lot_numbers && plan.lot_numbers.length > 0}
+											<div class="bg-white bg-opacity-50 rounded px-2 py-1">
+												<span class="text-gray-600">
+													<Hash size={10} class="inline mr-1" />
+													Lots {plan.lot_numbers.slice(0, 3).join(', ')}
+													{#if plan.lot_numbers.length > 3}
+														<span class="text-gray-500">+{plan.lot_numbers.length - 3}</span>
+													{/if}
+												</span>
+											</div>
+										{:else if plan.title_references && plan.title_references.length > 0}
+											<div class="bg-white bg-opacity-50 rounded px-2 py-1">
+												<span class="text-gray-600">
+													Titles: {plan.title_references.slice(0, 2).join(', ')}
+													{#if plan.title_references.length > 2}
+														<span class="text-gray-500">+{plan.title_references.length - 2}</span>
+													{/if}
+												</span>
+											</div>
+										{:else if plan.remarks && Array.isArray(plan.remarks) && plan.remarks.length > 0}
+											<div class="bg-white bg-opacity-50 rounded px-2 py-1">
+												<span class="text-gray-600">
+													<MessageSquare size={10} class="inline mr-1" />
+													{plan.remarks.length} remark{plan.remarks.length > 1 ? 's' : ''}
+												</span>
+											</div>
+										{/if}
+									</div>
 								</div>
 								
 								{#if plan.description}
@@ -634,6 +686,27 @@
 												<span class="flex items-center">
 													<Calendar size={12} class="mr-1" />
 													{plan.plan_year}
+												</span>
+											{/if}
+											{#if plan.surveyor_name}
+												<span>•</span>
+												<span class="flex items-center">
+													<User size={12} class="mr-1" />
+													{plan.surveyor_name}
+												</span>
+											{/if}
+											{#if plan.survey_datum}
+												<span>•</span>
+												<span class="flex items-center">
+													<Map size={12} class="mr-1" />
+													{plan.survey_datum}
+												</span>
+											{/if}
+											{#if plan.bearing_swing_difference !== null && plan.bearing_swing_difference !== undefined}
+												<span>•</span>
+												<span class="flex items-center">
+													<Navigation size={12} class="mr-1" />
+													{plan.bearing_swing_difference}° to MGA
 												</span>
 											{/if}
 											{#if plan.relationships_count && plan.relationships_count > 0}

@@ -121,7 +121,7 @@ export const authService = {
     return { success: true, data }
   },
 
-  async signUp(email: string, password: string, firstName: string, lastName: string, role: 'supervisor' | 'candidate', phone?: string) {
+  async signUp(email: string, password: string, firstName: string, lastName: string, phone?: string) {
     authStore.update(state => ({ ...state, loading: true, error: null }))
 
     const { data, error } = await supabase.auth.signUp({
@@ -131,7 +131,6 @@ export const authService = {
         data: {
           first_name: firstName,
           last_name: lastName,
-          role,
           phone
         }
       }

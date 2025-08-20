@@ -11,7 +11,13 @@
 		Link,
 		Copy,
 		Star,
-		StarOff
+		StarOff,
+		User,
+		Map,
+		Calendar,
+		Navigation,
+		MessageSquare,
+		Hash
 	} from 'lucide-svelte'
 	
 	export let plans: any[] = []
@@ -101,14 +107,88 @@
 			<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
 				{#each plans as plan}
 					<div class="border border-gray-200 rounded-lg overflow-hidden hover:shadow-md transition-shadow">
-						<!-- Plan Preview -->
+						<!-- Plan Metadata Preview -->
 						<div class="relative">
 							<button 
-								class="w-full bg-gray-100 h-48 flex items-center justify-center hover:bg-gray-200 transition-colors"
+								class="w-full bg-gradient-to-br from-blue-50 to-indigo-50 h-48 p-4 hover:from-blue-100 hover:to-indigo-100 transition-all duration-200 flex flex-col justify-between"
 								on:click={() => handlePlanView(plan.id)}
 								title="View plan with annotation tools"
 							>
-								<FileText size={32} class="text-gray-400" />
+								<!-- Top metadata row -->
+								<div class="w-full">
+									<div class="flex items-center justify-between mb-3">
+										<div class="flex items-center space-x-2">
+											<FileText size={20} class="text-blue-600" />
+											{#if plan.plan_year}
+												<span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+													<Calendar size={12} class="mr-1" />
+													{plan.plan_year}
+												</span>
+											{/if}
+										</div>
+										{#if plan.is_starred}
+											<Star size={16} class="text-yellow-500 fill-current" />
+										{/if}
+									</div>
+									
+									<!-- Key metadata fields -->
+									<div class="space-y-2 text-left">
+										{#if plan.surveyor_name}
+											<div class="flex items-center space-x-2 text-sm text-gray-700">
+												<User size={14} class="text-gray-500 flex-shrink-0" />
+												<span class="truncate">{plan.surveyor_name}</span>
+											</div>
+										{/if}
+										
+										{#if plan.survey_datum}
+											<div class="flex items-center space-x-2 text-sm text-gray-700">
+												<Map size={14} class="text-gray-500 flex-shrink-0" />
+												<span class="truncate">{plan.survey_datum}</span>
+											</div>
+										{/if}
+										
+										{#if plan.bearing_swing_difference !== null && plan.bearing_swing_difference !== undefined}
+											<div class="flex items-center space-x-2 text-sm text-gray-700">
+												<Navigation size={14} class="text-gray-500 flex-shrink-0" />
+												<span class="truncate">{plan.bearing_swing_difference}° to MGA</span>
+											</div>
+										{/if}
+										
+										{#if plan.lot_numbers && plan.lot_numbers.length > 0}
+											<div class="flex items-center space-x-2 text-sm text-gray-700">
+												<Hash size={14} class="text-gray-500 flex-shrink-0" />
+												<span class="truncate">
+													Lots {plan.lot_numbers.slice(0, 3).join(', ')}
+													{#if plan.lot_numbers.length > 3}
+														<span class="text-gray-500">+{plan.lot_numbers.length - 3}</span>
+													{/if}
+												</span>
+											</div>
+										{/if}
+										
+										{#if plan.remarks && Array.isArray(plan.remarks) && plan.remarks.length > 0}
+											<div class="flex items-center space-x-2 text-sm text-gray-700">
+												<MessageSquare size={14} class="text-gray-500 flex-shrink-0" />
+												<span class="truncate">{plan.remarks.length} remark{plan.remarks.length > 1 ? 's' : ''}</span>
+											</div>
+										{/if}
+									</div>
+								</div>
+								
+								<!-- Bottom metadata summary -->
+								<div class="w-full">
+									{#if plan.title_references && plan.title_references.length > 0}
+										<div class="text-xs text-gray-600 bg-white bg-opacity-50 rounded px-2 py-1">
+											<span class="font-medium">Titles:</span> 
+											{plan.title_references.slice(0, 2).join(', ')}
+											{#if plan.title_references.length > 2}
+												<span class="text-gray-500">+{plan.title_references.length - 2}</span>
+											{/if}
+										</div>
+									{:else}
+										<div class="text-xs text-gray-500 italic">Click to view and add metadata</div>
+									{/if}
+								</div>
 							</button>
 							
 							<!-- Selection checkbox -->
@@ -126,7 +206,7 @@
 							<!-- Favorite button -->
 							<button 
 								class="absolute top-2 right-2 p-1 bg-white bg-opacity-80 rounded-md hover:bg-opacity-100"
-								on:click={() => toggleFavorite(plan.id)}
+								on:click={(e) => { e.stopPropagation(); toggleFavorite(plan.id); }}
 							>
 								<svelte:component 
 									this={favoriteIds.includes(plan.id) ? Star : StarOff} 
@@ -262,6 +342,27 @@
 										<span>{plan.reference_number}</span>
 										<span>•</span>
 										<span>{formatDate(plan.created_at)}</span>
+										{#if plan.plan_year}
+											<span>•</span>
+											<span class="flex items-center">
+												<Calendar size={12} class="mr-1" />
+												{plan.plan_year}
+											</span>
+										{/if}
+										{#if plan.surveyor_name}
+											<span>•</span>
+											<span class="flex items-center">
+												<User size={12} class="mr-1" />
+												{plan.surveyor_name}
+											</span>
+										{/if}
+										{#if plan.survey_datum}
+											<span>•</span>
+											<span class="flex items-center">
+												<Map size={12} class="mr-1" />
+												{plan.survey_datum}
+											</span>
+										{/if}
 									</div>
 								</div>
 								

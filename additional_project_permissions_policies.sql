@@ -1,0 +1,15 @@
+-- NOTE: This file contains problematic policies with circular dependencies
+-- The approach of having project owners manage permissions through RLS creates circular dependencies
+-- 
+-- RECOMMENDED SOLUTION: 
+-- Handle permission management at the APPLICATION LEVEL instead of through RLS policies
+-- 
+-- The current simplified policies in fixed_project_permissions_rls_policy.sql only allow:
+-- - Users to view/manage their own permission records
+-- 
+-- Project owners should manage permissions through application code that:
+-- 1. Checks ownership directly in the projects table
+-- 2. Then performs INSERT/UPDATE/DELETE operations on project_permissions
+-- 3. Uses service-level security rather than RLS for these operations
+--
+-- This avoids circular dependencies while maintaining security through application logic.

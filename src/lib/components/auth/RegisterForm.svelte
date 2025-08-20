@@ -8,7 +8,6 @@
 	let confirmPassword = ''
 	let firstName = ''
 	let lastName = ''
-	let role: 'supervisor' | 'candidate' = 'candidate'
 	let phone = ''
 	let errors: { [key: string]: string } = {}
 	let isSubmitting = false
@@ -58,7 +57,6 @@
 			password,
 			firstName,
 			lastName,
-			role,
 			phone || undefined
 		)
 
@@ -144,17 +142,6 @@
 			{/if}
 		</div>
 
-		<div>
-			<label for="role" class="block text-sm font-medium text-gray-700">Role</label>
-			<select
-				id="role"
-				bind:value={role}
-				class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-			>
-				<option value="candidate">Candidate</option>
-				<option value="supervisor">Supervisor</option>
-			</select>
-		</div>
 
 		<div>
 			<label for="password" class="block text-sm font-medium text-gray-700">Password</label>

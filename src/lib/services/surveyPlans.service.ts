@@ -707,6 +707,159 @@ class SurveyPlansService {
   }
 
   /**
+   * Update plan metadata specifically
+   */
+  async updatePlanMetadata(
+    planId: string, 
+    metadata: {
+      surveyor_name?: string | null
+      title_references?: string[] | null
+      survey_datum?: string | null
+      bearing_swing_difference?: number | null
+      remarks?: any[] | null
+      lot_numbers?: string[] | null
+      deposited_plan_numbers?: string[] | null
+    }
+  ): Promise<ServiceResult<SurveyPlan>> {
+    try {
+      // Validate bearing swing difference range
+      if (metadata.bearing_swing_difference !== undefined && metadata.bearing_swing_difference !== null) {
+        if (metadata.bearing_swing_difference < -180 || metadata.bearing_swing_difference > 180) {
+          return { success: false, error: 'Bearing swing difference must be between -180 and 180 degrees' }
+        }
+      }
+
+      const { data, error } = await supabase
+        .from('survey_plans')
+        .update(metadata)
+        .eq('id', planId)
+        .select()
+        .single()
+
+      if (error) {
+        return { success: false, error: error.message }
+      }
+
+      return { success: true, data }
+    } catch (error) {
+      return { 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Unknown error occurred' 
+      }
+    }
+  }
+
+  /**
+   * Search for unique surveyor names for auto-suggest
+   */
+  async searchSurveyors(projectId: string, searchTerm?: string): Promise<ServiceResult<string[]>> {
+    try {
+      let query = supabase
+        .from('survey_plans')
+        .select('surveyor_name')
+        .eq('project_id', projectId)
+        .not('surveyor_name', 'is', null)
+        .eq('status', 'active')
+
+      if (searchTerm) {
+        query = query.ilike('surveyor_name', `%${searchTerm}%`)
+      }
+
+      const { data, error } = await query
+        .order('surveyor_name')
+        .limit(20)
+
+      if (error) {
+        return { success: false, error: error.message }
+      }
+
+      // Get unique surveyor names
+      const uniqueNames = [...new Set(
+        (data || []).map(item => item.surveyor_name).filter(Boolean)
+      )] as string[]
+
+      return { success: true, data: uniqueNames }
+    } catch (error) {
+      return { 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Unknown error occurred' 
+      }
+    }
+  }
+
+  /**
+   * Get metadata statistics for a project
+   */
+  async getMetadataStats(projectId: string): Promise<ServiceResult<{
+    total_with_surveyor: number
+    total_with_datum: number
+    total_with_bearing_swing: number
+    total_with_remarks: number
+    common_datums: Array<{ datum: string; count: number }>
+    common_surveyors: Array<{ surveyor: string; count: number }>
+  }>> {
+    try {
+      const { data, error } = await supabase
+        .from('survey_plans')
+        .select(`
+          surveyor_name,
+          survey_datum,
+          bearing_swing_difference,
+          remarks
+        `)
+        .eq('project_id', projectId)
+        .eq('status', 'active')
+
+      if (error) {
+        return { success: false, error: error.message }
+      }
+
+      const plans = data || []
+      
+      // Calculate statistics
+      const stats = {
+        total_with_surveyor: plans.filter(p => p.surveyor_name).length,
+        total_with_datum: plans.filter(p => p.survey_datum).length,
+        total_with_bearing_swing: plans.filter(p => p.bearing_swing_difference !== null).length,
+        total_with_remarks: plans.filter(p => p.remarks && Array.isArray(p.remarks) && p.remarks.length > 0).length,
+        common_datums: [] as Array<{ datum: string; count: number }>,
+        common_surveyors: [] as Array<{ surveyor: string; count: number }>
+      }
+
+      // Count common datums
+      const datumCounts = new Map<string, number>()
+      plans.forEach(p => {
+        if (p.survey_datum) {
+          datumCounts.set(p.survey_datum, (datumCounts.get(p.survey_datum) || 0) + 1)
+        }
+      })
+      stats.common_datums = Array.from(datumCounts.entries())
+        .map(([datum, count]) => ({ datum, count }))
+        .sort((a, b) => b.count - a.count)
+        .slice(0, 10)
+
+      // Count common surveyors
+      const surveyorCounts = new Map<string, number>()
+      plans.forEach(p => {
+        if (p.surveyor_name) {
+          surveyorCounts.set(p.surveyor_name, (surveyorCounts.get(p.surveyor_name) || 0) + 1)
+        }
+      })
+      stats.common_surveyors = Array.from(surveyorCounts.entries())
+        .map(([surveyor, count]) => ({ surveyor, count }))
+        .sort((a, b) => b.count - a.count)
+        .slice(0, 10)
+
+      return { success: true, data: stats }
+    } catch (error) {
+      return { 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Unknown error occurred' 
+      }
+    }
+  }
+
+  /**
    * Get starred plans for a project
    */
   async getStarredPlans(projectId: string): Promise<ServiceResult<SurveyPlanWithDetails[]>> {

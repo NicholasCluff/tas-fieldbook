@@ -12,8 +12,12 @@
 		Download,
 		Eye
 	} from 'lucide-svelte'
+	import ProjectHeader from '$lib/components/projects/ProjectHeader.svelte'
+	import { projectsStore } from '$lib/stores/projects.js'
 	
 	const projectId = $derived($page.params.id)
+	
+	$: project = $projectsStore.currentProject
 	
 	// Mock data - replace with actual service call
 	let photos: any[] = []
@@ -184,6 +188,16 @@
 		totalSize: photos.reduce((sum, p) => sum + (p.file_size || 0), 0)
 	})
 </script>
+
+<svelte:head>
+	<title>Photo Gallery - {project?.title || 'Project'} - TasFieldbook</title>
+</svelte:head>
+
+<ProjectHeader 
+	{project} 
+	title="Photo Gallery" 
+	subtitle="Manage project photos" 
+/>
 
 <div class="flex flex-col h-full">
 	<!-- Filters Panel -->
